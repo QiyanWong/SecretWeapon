@@ -270,12 +270,24 @@ def generate_dataset(num_images=100):
             sy = random.randint(int(th * 0.5), th - 120)
             canvas.paste(sf_img, (sx, sy), sf_img)
 
-        # 保存纯背景图片与 0KB 空标注文件
+        # 保存纯背景图片与 0KB 空标注文件 (同时输出 AnyLabeling JSON)
         out_name = f"synth_pure_bg_{now_str}_{bg_idx:02d}"
         rgb_img = canvas.convert("RGB")
         rgb_img.save(os.path.join(RAW_OUTPUT_DIR, f"{out_name}.jpg"), quality=95)
         with open(os.path.join(RAW_OUTPUT_DIR, f"{out_name}.txt"), 'w', encoding='utf-8') as f:
             pass # 纯背景空文件
+
+        # 输出 AnyLabeling 兼容的空 JSON
+        with open(os.path.join(RAW_OUTPUT_DIR, f"{out_name}.json"), 'w', encoding='utf-8') as f:
+            json.dump({
+                "version": "0.3.3",
+                "flags": {},
+                "shapes": [],
+                "imagePath": f"{out_name}.jpg",
+                "imageData": None,
+                "imageHeight": th,
+                "imageWidth": tw
+            }, f, indent=2, ensure_ascii=False)
 
         generated_count += 1
         print(f"   ✓ [纯背景负样本] {out_name}.jpg (地图: {bg_name})")
@@ -411,7 +423,7 @@ def generate_dataset(num_images=100):
             enh_contrast = ImageEnhance.Contrast(canvas)
             canvas = enh_contrast.enhance(random.uniform(0.90, 1.12))
 
-        # 5. 保存生成的 JPG 与 YOLO TXT 标注
+        # 5. 保存生成的 JPG, YOLO TXT 标注与 AnyLabeling JSON 标注
         out_basename = f"synth_{now_str}_{img_idx:03d}"
         rgb_img = canvas.convert("RGB")
         rgb_img.save(os.path.join(RAW_OUTPUT_DIR, f"{out_basename}.jpg"), quality=95)
@@ -419,6 +431,34 @@ def generate_dataset(num_images=100):
         with open(os.path.join(RAW_OUTPUT_DIR, f"{out_basename}.txt"), 'w', encoding='utf-8') as f:
             for lbl in labels:
                 f.write(f"{lbl[0]} {lbl[1]:.6f} {lbl[2]:.6f} {lbl[3]:.6f} {lbl[4]:.6f}\n")
+
+        # 生成 AnyLabeling JSON 格式
+        json_shapes = []
+        for (cid, xc, yc, w, h) in labels:
+            x1 = (xc - w / 2.0) * tw
+            y1 = (yc - h / 2.0) * th
+            x2 = (xc + w / 2.0) * tw
+            y2 = (yc + h / 2.0) * th
+            cname = CLASS_LIST[cid]
+            json_shapes.append({
+                "label": cname,
+                "points": [[round(x1, 1), round(y1, 1)], [round(x2, 1), round(y2, 1)]],
+                "group_id": None,
+                "description": "",
+                "shape_type": "rectangle",
+                "flags": {}
+            })
+
+        with open(os.path.join(RAW_OUTPUT_DIR, f"{out_basename}.json"), 'w', encoding='utf-8') as f:
+            json.dump({
+                "version": "0.3.3",
+                "flags": {},
+                "shapes": json_shapes,
+                "imagePath": f"{out_basename}.jpg",
+                "imageData": None,
+                "imageHeight": th,
+                "imageWidth": tw
+            }, f, indent=2, ensure_ascii=False)
 
         # 6. 生成前 15 张的可视化调试质检图
         if img_idx < 15:
