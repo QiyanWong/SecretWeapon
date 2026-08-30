@@ -13,10 +13,10 @@ dataset/synthetic_debug/
 scratch/
 .system_generated/
 
-# Large installers and compressed archives
+# Large installers, archives, and external tools
 *.zip
 *.exe
-!WzComparerR2/
+WzComparerR2/
 
 # OS and Editor files
 .vscode/
