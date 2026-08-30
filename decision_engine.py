@@ -245,11 +245,12 @@ class DecisionEngine:
         elif self.state == FSMState.COMBAT:
             self._execute_combat(game_screen_player_pos, same_level_monsters, config)
 
-    def _set_state(self, new_state):
-        if self.state != new_state:
+    def _set_state(self, new_state, force=False):
+        if self.state != new_state or force:
             now = time.time()
             duration = now - self.last_state_change_time if self.last_state_change_time > 0 else 0
-            print(f"[FSM 状态切换] {self.state} ---> {new_state} (上一状态持续 {duration:.2f}s)")
+            if self.state != new_state:
+                print(f"[FSM 状态切换] {self.state} ---> {new_state} (上一状态持续 {duration:.2f}s)")
             self.state = new_state
             self.last_state_change_time = now
             return True
