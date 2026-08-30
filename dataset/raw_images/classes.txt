@@ -1,7 +1,0 @@
-axe_stump
-fire_roar
-player_climb
-player_left
-player_right
-wild_roar
-风独眼

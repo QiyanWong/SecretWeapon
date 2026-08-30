@@ -7,7 +7,11 @@ __pycache__/
 runs/
 *.pt
 
-# Debug and temporary directories
+# Dataset generated and local training data
+dataset/images/
+dataset/labels/
+dataset/raw_images/
+dataset/routes/
 dataset/debug_snapshots/
 dataset/synthetic_debug/
 scratch/
