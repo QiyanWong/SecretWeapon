@@ -208,18 +208,23 @@ def get_tight_bbox(sprite):
     return int(x_min), int(y_min), int(x_max), int(y_max)
 
 
-def extract_polygon_contour(sprite_img, offset_x=0, offset_y=0, epsilon=1.2):
+def extract_polygon_contour(sprite_img, offset_x=0, offset_y=0, epsilon=0.8):
     """
-    通过 RGBA 贴图的 Alpha 通道自动提取平滑多边形轮廓点集 [[x, y], ...]
+    通过 RGBA 贴图的 Alpha 通道自动提取精细多边形轮廓点集 [[x, y], ...]
     """
+    if sprite_img.mode != 'RGBA':
+        sprite_img = sprite_img.convert('RGBA')
     alpha = np.array(sprite_img.getchannel('A'))
-    mask = (alpha > 15).astype(np.uint8) * 255
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    mask = (alpha > 10).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
     if not contours:
         w, h = sprite_img.size
         return [[offset_x, offset_y], [offset_x + w, offset_y], [offset_x + w, offset_y + h], [offset_x, offset_y + h]]
     c = max(contours, key=cv2.contourArea)
     approx = cv2.approxPolyDP(c, epsilon=epsilon, closed=True)
+    if len(approx) < 6 and len(c) >= 6:
+        step = max(1, len(c) // 25)
+        approx = c[::step]
     points = []
     for pt in approx:
         px = round(float(pt[0][0] + offset_x), 1)
