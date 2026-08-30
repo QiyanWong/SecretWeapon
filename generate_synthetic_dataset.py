@@ -25,7 +25,7 @@ DEBUG_OUTPUT_DIR = os.path.join(BASE_DIR, "dataset", "synthetic_debug")
 os.makedirs(RAW_OUTPUT_DIR, exist_ok=True)
 os.makedirs(DEBUG_OUTPUT_DIR, exist_ok=True)
 
-# 24 类别定义与映射 (排除 rope 和 portal，仅保留 3 种玩家姿态 + 21 种活体怪物)
+# 24 类别定义 (3 玩家姿态 + 21 活体怪物)
 CLASS_LIST = [
     'player_left',
     'player_right',
@@ -53,8 +53,9 @@ CLASS_LIST = [
     'crab'
 ]
 CLASS_TO_ID = {name: i for i, name in enumerate(CLASS_LIST)}
+MONSTER_CLASSES = CLASS_LIST[3:]
 
-# 怪物专属战利品绑定映射 (同台伴生逻辑: 只有图里有该怪，才会在其身旁撒落该战利品)
+# 怪物专属战利品绑定映射 (同台伴生逻辑)
 MONSTER_TO_UNIQUE_DROP = {
     'orange_mushroom': 'orange_mushroom_cap',
     'red_snail':       'red_snail_shell',
@@ -79,64 +80,13 @@ MONSTER_TO_UNIQUE_DROP = {
     'crab':            'lorang_claw'
 }
 
-# 地图生态与怪物/掉落物主题绑定
-BIOME_MAPPING = {
-    '沼泽地': {
-        'mobs': ['croco', 'jr_necki'],
-        'drops': ['ligator_skin', 'jr_necki_skin'],
-        'props': ['swamp_purple_flower', 'sabitrama_herb', 'herb_bunch']
-    },
-    '北部训练场': {
-        'mobs': ['slime', 'horny_mushroom', 'zombie_mushroom', 'orange_mushroom', 'red_snail', 'pig'],
-        'drops': ['squishy_liquid', 'horny_mushroom_cap', 'charm_of_the_undead', 'orange_mushroom_cap', 'red_snail_shell', 'pig_head'],
-        'props': []
-    },
-    '地铁一号线': {
-        'mobs': ['bubbling', 'jr_wraith'],
-        'drops': ['bubbling_bubble', 'tablecloth'],
-        'props': []
-    },
-    '勇士部落北部': {
-        'mobs': ['axe_stump', 'wild_boar', 'pig', 'ribbon_pig', 'fire_boar'],
-        'drops': ['firewood', 'wild_boar_tooth', 'pig_head', 'pig_ribbon', 'fire_boar_tooth'],
-        'props': []
-    },
-    '森林迷宫': {
-        'mobs': ['lupin', 'fire_boar', 'drake', 'evil_eye'],
-        'drops': ['lupin_banana', 'fire_boar_tooth', 'drake_skull', 'evil_eye_tail'],
-        'props': []
-    },
-    '石人寺院': {
-        'mobs': ['wooden_mask', 'rocky_mask'],
-        'drops': ['wooden_board', 'rocky_mask_doll'],
-        'props': []
-    },
-    '遗迹': {
-        'mobs': ['wooden_mask', 'rocky_mask'],
-        'drops': ['wooden_board', 'rocky_mask_doll'],
-        'props': []
-    },
-    '冰冷的洞穴': {
-        'mobs': ['evil_eye', 'cold_eye', 'jr_wraith', 'drake'],
-        'drops': ['evil_eye_tail', 'cold_eye_tail', 'tablecloth', 'drake_skull'],
-        'props': []
-    },
-    '黄金海滩': {
-        'mobs': ['crab', 'lupin', 'red_snail', 'slime'],
-        'drops': ['lorang_claw', 'lupin_banana', 'red_snail_shell', 'squishy_liquid'],
-        'props': []
-    }
-}
-
 
 def load_all_monster_sprites():
-    """
-    加载 21 种怪物的全部 183 个独立活体帧，按类别归类并建立全覆盖抽取列表
-    """
+    """加载 21 种怪物的全部独立活体帧，按种类字典归类"""
     all_sprites = {} # { class_name: [ {"image": Image, "name": ...}, ... ] }
-    flat_sprite_deck = [] # [ {"class_name": ..., "image": ..., "name": ...} ]
+    flat_sprite_deck = []
 
-    for cls in CLASS_LIST[3:]: # 排除前3个玩家类别
+    for cls in MONSTER_CLASSES:
         folder = os.path.join(MONSTER_DIR, cls)
         if not os.path.exists(folder):
             continue
@@ -155,7 +105,7 @@ def load_all_monster_sprites():
 
 
 def load_player_sprites():
-    """加载玩家角色的三种状态素材"""
+    """加载纯净透明的玩家角色形态素材"""
     player_sprites = {'player_left': [], 'player_right': [], 'player_climb': []}
     for p_cls in player_sprites.keys():
         folder = os.path.join(PLAYER_DIR, p_cls)
@@ -163,15 +113,18 @@ def load_player_sprites():
             for p in glob.glob(os.path.join(folder, "*.png")):
                 try:
                     img = Image.open(p).convert("RGBA")
-                    player_sprites[p_cls].append(img)
+                    # 确保是带有效透明通道的贴图
+                    alpha = img.getchannel('A')
+                    if alpha.getextrema()[0] < 250:
+                        player_sprites[p_cls].append(img)
                 except Exception:
                     pass
     return player_sprites
 
 
 def load_drop_and_distractor_sprites():
-    """加载掉落物（金币、专属战利品）、宠物、植物素材"""
-    drops = {} # { drop_key: Image }
+    """加载掉落物、宠物与环境干扰物素材"""
+    drops = {}
     if os.path.exists(DROPS_DIR):
         for d in os.listdir(DROPS_DIR):
             sub = os.path.join(DROPS_DIR, d)
@@ -198,7 +151,7 @@ def load_drop_and_distractor_sprites():
 
 
 def get_tight_bbox(sprite):
-    """根据非透明像素 (Alpha > 10) 计算紧凑包围框"""
+    """根据非透明像素 (Alpha > 10) 计算紧凑外接框"""
     alpha = np.array(sprite.getchannel('A'))
     non_zero = np.argwhere(alpha > 10)
     if non_zero.size == 0:
@@ -210,7 +163,7 @@ def get_tight_bbox(sprite):
 
 def extract_polygon_contour(sprite_img, offset_x=0, offset_y=0, epsilon=0.8):
     """
-    通过 RGBA 贴图的 Alpha 通道自动提取精细多边形轮廓点集 [[x, y], ...]
+    通过 RGBA 贴图的 Alpha 通道提取亚像素级精细多边形轮廓点集 [[x, y], ...]
     """
     if sprite_img.mode != 'RGBA':
         sprite_img = sprite_img.convert('RGBA')
@@ -233,9 +186,37 @@ def extract_polygon_contour(sprite_img, offset_x=0, offset_y=0, epsilon=0.8):
     return points
 
 
-def generate_dataset(num_images=100):
+def check_box_collision(b1, b2, margin=15):
     """
-    一键生成全覆盖、防幻觉的高质量合成数据集
+    检查两个目标框是否发生非法重叠。
+    - 同种怪物之间: 允许 20%~60% 重叠 (返回 False / 无冲突);
+    - 异种怪物或玩家之间: 严禁重叠并需保持安全间距 (返回 True / 产生冲突).
+    b = (x1, y1, x2, y2, cls_name)
+    """
+    x1_a, y1_a, x2_a, y2_a, cls_a = b1
+    x1_b, y1_b, x2_b, y2_b, cls_b = b2
+    
+    # 同种怪物重叠规则
+    if cls_a == cls_b and cls_a not in ['player_left', 'player_right', 'player_climb']:
+        # 避免两只怪 100% 几乎完全重叠，要求中心水平或垂直有一定微距
+        w_min = min(x2_a - x1_a, x2_b - x1_b)
+        dist_x = abs((x1_a + x2_a) / 2 - (x1_b + x2_b) / 2)
+        dist_y = abs((y1_a + y2_a) / 2 - (y1_b + y2_b) / 2)
+        if dist_x < w_min * 0.15 and dist_y < 15:
+            return True # 几乎 100% 完全重合，拒绝
+        return False # 合法的同种怪部分重叠
+
+    # 异种怪物之间或与玩家之间: 严禁任何重叠
+    if (x1_a - margin < x2_b and x2_a + margin > x1_b and
+        y1_a - margin < y2_b and y2_a + margin > y1_b):
+        return True # 异种冲突
+        
+    return False
+
+
+def generate_dataset(num_images=160):
+    """
+    生成支持同种怪多形态重叠、全类别保底重叠的高质量合成数据集
     """
     bg_files = glob.glob(os.path.join(BG_DIR, "*.png"))
     if not bg_files:
@@ -249,26 +230,21 @@ def generate_dataset(num_images=100):
     print("=" * 75)
     print(f"🚀 开始生成高质量 YOLOv8 训练数据集 (目标生成: {num_images} 张)")
     print(f"   🏞️ 背景图数量: {len(bg_files)} 张")
-    print(f"   👾 活体怪物总帧数: {len(flat_monster_deck)} 帧 (保证 100% 全覆盖出场)")
-    print(f"   💰 掉落物/战利品总数: {len(drops_dict)} 种 (同台伴生，不标注)")
-    print(f"   🐾 宠物/互动植物总数: {len(distractors_dict)} 种 (负样本，不标注)")
+    print(f"   👾 活体怪物总帧数: {len(flat_monster_deck)} 帧")
+    print(f"   🧩 同种怪重叠规则: 仅允许同种怪物多形态重叠 (21 种怪 100% 保底重叠)")
+    print(f"   💰 掉落物/战利品: {len(drops_dict)} 种 (同台伴生，不标注)")
     print("=" * 75)
 
-    # 1. 建立怪物全覆盖洗牌队列 (保证每一个形态至少出现一次以上)
-    deck_queue = flat_monster_deck.copy()
-    random.shuffle(deck_queue)
-
-    generated_count = 0
     now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    generated_count = 0
 
-    # 2. 阶段 A: 为 9 种背景各生成 1 张【纯背景负样本图】(0 怪物 0 标注，仅含自然背景或散落金币/植物)
-    print("\n[Phase 1] 正在生成 9 种不同地图的【纯背景负样本】(0 标注框，彻底抑制地图假阳性)...")
+    # 1. 阶段 A: 为 9 种背景各生成 1 张【纯背景负样本图】(0 标注框)
+    print("\n[Phase 1] 正在生成 9 种不同地图的【纯背景负样本】(0 标注框)...")
     for bg_idx, bg_path in enumerate(bg_files):
         bg_name = os.path.splitext(os.path.basename(bg_path))[0]
         bg_img = Image.open(bg_path).convert("RGBA")
         bw, bh = bg_img.size
 
-        # 随机裁剪 1280x720 视口 (若原图较小则缩放或自适应)
         tw, th = 1280, 720
         if bw > tw and bh > th:
             rx = random.randint(0, bw - tw)
@@ -277,8 +253,8 @@ def generate_dataset(num_images=100):
         else:
             crop_bg = bg_img.resize((tw, th), Image.Resampling.LANCZOS)
 
-        # 随机在此纯背景图上撒落 2~4 个金币或该地图的专属植物 (无标签)
         canvas = crop_bg.copy()
+        # 散落金币/植物
         coin_keys = ['bronze_coin', 'gold_coin', 'meso_bills', 'meso_sack']
         for _ in range(random.randint(1, 4)):
             ck = random.choice(coin_keys)
@@ -288,42 +264,33 @@ def generate_dataset(num_images=100):
                 cy = random.randint(int(th * 0.4), th - 80)
                 canvas.paste(c_img, (cx, cy), c_img)
 
-        # 若是沼泽地图，添加沼泽紫花 (无标签)
         if '沼泽' in bg_name and 'swamp_purple_flower' in distractors_dict:
             sf_img = distractors_dict['swamp_purple_flower']
             sx = random.randint(100, tw - 150)
             sy = random.randint(int(th * 0.5), th - 120)
             canvas.paste(sf_img, (sx, sy), sf_img)
 
-        # 保存纯背景图片与 0KB 空标注文件 (同时输出 AnyLabeling JSON)
         out_name = f"synth_pure_bg_{now_str}_{bg_idx:02d}"
         rgb_img = canvas.convert("RGB")
         rgb_img.save(os.path.join(RAW_OUTPUT_DIR, f"{out_name}.jpg"), quality=95)
         with open(os.path.join(RAW_OUTPUT_DIR, f"{out_name}.txt"), 'w', encoding='utf-8') as f:
-            pass # 纯背景空文件
-
-        # 输出 AnyLabeling 兼容的空 JSON
+            pass
         with open(os.path.join(RAW_OUTPUT_DIR, f"{out_name}.json"), 'w', encoding='utf-8') as f:
-            json.dump({
-                "version": "0.3.3",
-                "flags": {},
-                "shapes": [],
-                "imagePath": f"{out_name}.jpg",
-                "imageData": None,
-                "imageHeight": th,
-                "imageWidth": tw
-            }, f, indent=2, ensure_ascii=False)
+            json.dump({"version": "0.3.3", "flags": {}, "shapes": [], "imagePath": f"{out_name}.jpg", "imageData": None, "imageHeight": th, "imageWidth": tw}, f, indent=2, ensure_ascii=False)
 
         generated_count += 1
         print(f"   ✓ [纯背景负样本] {out_name}.jpg (地图: {bg_name})")
 
-    # 3. 阶段 B: 合成带怪物与玩家的训练图片 (保证 183 个怪物形态轮流全覆盖登场)
-    print(f"\n[Phase 2] 正在合成怪物与玩家战斗场景图片 (目标补齐至 {num_images} 张)...")
-    
+    # 2. 阶段 B: 保底覆盖 21 种怪物的【专属同种重叠场景】(每种怪物至少 2 张同种重叠图)
+    print("\n[Phase 2] 正在为 21 种怪物逐一生成【专属同种怪多形态重叠图】(保证 100% 出现同种重叠)...")
+    guaranteed_species_queue = []
+    for cls in MONSTER_CLASSES:
+        guaranteed_species_queue.append(cls)
+        guaranteed_species_queue.append(cls) # 每种怪安排 2 张重叠图
+
     img_idx = 0
     while generated_count < num_images:
         bg_path = random.choice(bg_files)
-        bg_name = os.path.splitext(os.path.basename(bg_path))[0]
         bg_img = Image.open(bg_path).convert("RGBA")
         bw, bh = bg_img.size
 
@@ -335,125 +302,172 @@ def generate_dataset(num_images=100):
         else:
             canvas = bg_img.resize((tw, th), Image.Resampling.LANCZOS)
 
-        labels = [] # [ (cls_id, x_center, y_center, w, h) ]
-        json_shapes = [] # AnyLabeling 多边形轮廓标注
-        occupied_boxes = [] # 用于防过度重叠 [ (x1, y1, x2, y2) ]
-        present_monster_classes = set()
+        labels = []
+        json_shapes = []
+        placed_boxes = [] # [ (x1, y1, x2, y2, cls_name) ]
 
-        # 1. 决定本张图生成的怪物数量 (提升密集度: 3 ~ 7 只)
-        num_mobs = random.randint(3, 7)
-        
-        # 提取怪物 (优先从全覆盖洗牌池提取，池空则重新洗牌循环)
-        chosen_mob_items = []
-        for _ in range(num_mobs):
-            if not deck_queue:
-                deck_queue = flat_monster_deck.copy()
-                random.shuffle(deck_queue)
-            chosen_mob_items.append(deck_queue.pop(0))
+        # 决定本张图的怪物种类分布
+        if guaranteed_species_queue:
+            # 优先消耗保底队列中的怪物种属
+            primary_species = guaranteed_species_queue.pop(0)
+            other_species = [s for s in MONSTER_CLASSES if s != primary_species]
+            chosen_species_list = [primary_species]
+            # 额外随机引入 1 种异种怪
+            if random.random() < 0.6:
+                chosen_species_list.append(random.choice(other_species))
+            force_overlap_primary = True
+        else:
+            # 正常成组刷新: 随机选取 1 ~ 3 种怪物
+            num_species = random.choice([1, 2, 2, 3])
+            chosen_species_list = random.sample(MONSTER_CLASSES, k=num_species)
+            force_overlap_primary = (random.random() < 0.7) # 70% 概率触发同种重叠
 
-        # 放置怪物
-        for m_item in chosen_mob_items:
-            m_cls = m_item["class_name"]
-            m_img = m_item["image"]
-            present_monster_classes.add(m_cls)
+        # 遍历选中的每一种怪，为其生成 2 ~ 4 个不同形态实例
+        for sp_idx, sp_cls in enumerate(chosen_species_list):
+            available_frames = monster_sprites_by_cls.get(sp_cls, [])
+            if not available_frames:
+                continue
 
-            # 随机水平镜像翻转 (朝左/朝右)
-            if random.random() < 0.5:
-                m_img = m_img.transpose(Image.FLIP_LEFT_RIGHT)
+            # 本种怪生成的实例数 (若是首要怪物且要求重叠，则生成 2~4 只)
+            if sp_idx == 0 and force_overlap_primary:
+                inst_count = min(len(available_frames), random.randint(2, 4))
+            else:
+                inst_count = min(len(available_frames), random.randint(1, 3))
 
-            # 随机轻微尺寸缩放 (0.95 ~ 1.05)
-            scale = random.uniform(0.95, 1.05)
-            sw = max(10, int(m_img.width * scale))
-            sh = max(10, int(m_img.height * scale))
-            m_img_scaled = m_img.resize((sw, sh), Image.Resampling.LANCZOS)
+            # 随机挑选本种怪的 distinct 动作形态 (例如 stand, hit1, move)
+            if len(available_frames) >= inst_count:
+                chosen_frames = random.sample(available_frames, k=inst_count)
+            else:
+                chosen_frames = [random.choice(available_frames) for _ in range(inst_count)]
 
-            # 随机在地面/中下部寻找放置位置
-            pos_x = random.randint(40, tw - sw - 40)
-            pos_y = random.randint(int(th * 0.25), th - sh - 40)
+            # 确定该种群落的基准锚点 (Anchor Base Position)
+            cluster_base_x = random.randint(60, tw - 250)
+            cluster_base_y = random.randint(int(th * 0.25), th - 150)
 
-            # 贴入画布
-            canvas.paste(m_img_scaled, (pos_x, pos_y), m_img_scaled)
+            for f_idx, f_item in enumerate(chosen_frames):
+                m_img = f_item["image"]
+                
+                # 随机镜像朝向
+                if random.random() < 0.5:
+                    m_img = m_img.transpose(Image.FLIP_LEFT_RIGHT)
 
-            # 计算精准 tight bounding box 并转换为 YOLO 归一化格式
-            bx1, by1, bx2, by2 = get_tight_bbox(m_img_scaled)
-            abs_x1 = pos_x + bx1
-            abs_y1 = pos_y + by1
-            abs_x2 = pos_x + bx2
-            abs_y2 = pos_y + by2
+                # 随机轻微缩放 (0.95 ~ 1.05)
+                scale = random.uniform(0.95, 1.05)
+                sw = max(10, int(m_img.width * scale))
+                sh = max(10, int(m_img.height * scale))
+                m_scaled = m_img.resize((sw, sh), Image.Resampling.LANCZOS)
 
-            norm_xc = ((abs_x1 + abs_x2) / 2.0) / tw
-            norm_yc = ((abs_y1 + abs_y2) / 2.0) / th
-            norm_w = (abs_x2 - abs_x1) / tw
-            norm_h = (abs_y2 - abs_y1) / th
+                # 计算放置坐标: 同种怪第二只及之后，以 30%~55% 重叠偏移放置在群落周围
+                placed_success = False
+                for attempt in range(25):
+                    if f_idx == 0:
+                        pos_x = max(20, min(tw - sw - 20, cluster_base_x + random.randint(-20, 20)))
+                        pos_y = max(int(th * 0.2), min(th - sh - 20, cluster_base_y + random.randint(-15, 15)))
+                    else:
+                        # 产生同种重叠: 紧贴上一只怪物水平偏移 (25% ~ 55% 宽度)
+                        overlap_offset_x = int(sw * random.uniform(0.28, 0.58) * random.choice([-1, 1]))
+                        overlap_offset_y = random.randint(-10, 10)
+                        pos_x = max(20, min(tw - sw - 20, cluster_base_x + overlap_offset_x))
+                        pos_y = max(int(th * 0.2), min(th - sh - 20, cluster_base_y + overlap_offset_y))
 
-            cls_id = CLASS_TO_ID.get(m_cls)
-            if cls_id is not None:
-                labels.append((cls_id, norm_xc, norm_yc, norm_w, norm_h))
-                occupied_boxes.append((abs_x1, abs_y1, abs_x2, abs_y2))
+                    # 计算紧凑外接框
+                    bx1, by1, bx2, by2 = get_tight_bbox(m_scaled)
+                    cand_box = (pos_x + bx1, pos_y + by1, pos_x + bx2, pos_y + by2, sp_cls)
 
-                # 提取平滑多边形轮廓点集 (AnyLabeling 专属 polygon 格式)
-                poly_pts = extract_polygon_contour(m_img_scaled, offset_x=pos_x, offset_y=pos_y)
-                json_shapes.append({
-                    "label": m_cls,
-                    "points": poly_pts,
-                    "group_id": None,
-                    "description": "",
-                    "shape_type": "polygon",
-                    "flags": {}
-                })
+                    # 碰撞检测: 与已放置目标比较 (同种怪允许重叠，异种严禁重叠)
+                    collision = False
+                    for pb in placed_boxes:
+                        if check_box_collision(cand_box, pb):
+                            collision = True
+                            break
 
-            # 伴生掉落物逻辑: 在该怪物脚下/旁边概率生成它自己的独有战利品 (不标注)
-            if random.random() < 0.45:
-                drop_k = MONSTER_TO_UNIQUE_DROP.get(m_cls)
-                if drop_k and drop_k in drops_dict:
-                    d_img = drops_dict[drop_k]
-                    dx = max(10, min(tw - 40, pos_x + random.randint(-25, sw + 10)))
-                    dy = max(10, min(th - 40, pos_y + sh - random.randint(5, 20)))
-                    canvas.paste(d_img, (dx, dy), d_img)
+                    if not collision:
+                        # 成功放置
+                        canvas.paste(m_scaled, (pos_x, pos_y), m_scaled)
+                        placed_boxes.append(cand_box)
 
-        # 2. 放置玩家角色 (85% 概率出现玩家)
+                        abs_x1, abs_y1, abs_x2, abs_y2, _ = cand_box
+                        norm_xc = ((abs_x1 + abs_x2) / 2.0) / tw
+                        norm_yc = ((abs_y1 + abs_y2) / 2.0) / th
+                        norm_w = (abs_x2 - abs_x1) / tw
+                        norm_h = (abs_y2 - abs_y1) / th
+
+                        labels.append((CLASS_TO_ID[sp_cls], norm_xc, norm_yc, norm_w, norm_h))
+
+                        # 提取精细多边形轮廓
+                        poly_pts = extract_polygon_contour(m_scaled, offset_x=pos_x, offset_y=pos_y)
+                        json_shapes.append({
+                            "label": sp_cls,
+                            "points": poly_pts,
+                            "group_id": None,
+                            "description": "",
+                            "shape_type": "polygon",
+                            "flags": {}
+                        })
+
+                        # 伴生战利品 (40% 概率)
+                        if random.random() < 0.40:
+                            drop_k = MONSTER_TO_UNIQUE_DROP.get(sp_cls)
+                            if drop_k and drop_k in drops_dict:
+                                d_img = drops_dict[drop_k]
+                                dx = max(10, min(tw - 40, pos_x + random.randint(-15, sw + 5)))
+                                dy = max(10, min(th - 40, pos_y + sh - random.randint(5, 20)))
+                                canvas.paste(d_img, (dx, dy), d_img)
+
+                        placed_success = True
+                        break
+
+        # 3. 放置玩家角色 (85% 概率出现，严禁与任何怪物重叠)
         if random.random() < 0.85:
             p_cls = random.choice(['player_left', 'player_right', 'player_climb'])
             if player_sprites.get(p_cls):
                 p_img = random.choice(player_sprites[p_cls])
                 pw, ph = p_img.size
-                px = random.randint(60, tw - pw - 60)
-                py = random.randint(int(th * 0.3), th - ph - 40)
-                canvas.paste(p_img, (px, py), p_img)
+                
+                for attempt in range(25):
+                    px = random.randint(50, tw - pw - 50)
+                    py = random.randint(int(th * 0.3), th - ph - 30)
 
-                # 标注玩家
-                pbx1, pby1, pbx2, pby2 = get_tight_bbox(p_img)
-                pabs_x1 = px + pbx1
-                pabs_y1 = py + pby1
-                pabs_x2 = px + pbx2
-                pabs_y2 = py + pby2
+                    pbx1, pby1, pbx2, pby2 = get_tight_bbox(p_img)
+                    p_box = (px + pbx1, py + pby1, px + pbx2, py + pby2, p_cls)
 
-                p_norm_xc = ((pabs_x1 + pabs_x2) / 2.0) / tw
-                p_norm_yc = ((pabs_y1 + pabs_y2) / 2.0) / th
-                p_norm_w = (pabs_x2 - pabs_x1) / tw
-                p_norm_h = (pabs_y2 - pabs_y1) / th
+                    collision = False
+                    for pb in placed_boxes:
+                        if check_box_collision(p_box, pb):
+                            collision = True
+                            break
 
-                labels.append((CLASS_TO_ID[p_cls], p_norm_xc, p_norm_yc, p_norm_w, p_norm_h))
+                    if not collision:
+                        canvas.paste(p_img, (px, py), p_img)
+                        placed_boxes.append(p_box)
 
-                # 提取玩家多边形轮廓点集 (AnyLabeling polygon)
-                p_poly_pts = extract_polygon_contour(p_img, offset_x=px, offset_y=py)
-                json_shapes.append({
-                    "label": p_cls,
-                    "points": p_poly_pts,
-                    "group_id": None,
-                    "description": "",
-                    "shape_type": "polygon",
-                    "flags": {}
-                })
+                        pabs_x1, pabs_y1, pabs_x2, pabs_y2, _ = p_box
+                        p_norm_xc = ((pabs_x1 + pabs_x2) / 2.0) / tw
+                        p_norm_yc = ((pabs_y1 + pabs_y2) / 2.0) / th
+                        p_norm_w = (pabs_x2 - pabs_x1) / tw
+                        p_norm_h = (pabs_y2 - pabs_y1) / th
 
-                # 伴生宠物小白雪人 (35% 概率跟在玩家身边，不标注)
-                if random.random() < 0.35 and 'stand0_0' in distractors_dict:
-                    yeti_img = distractors_dict['stand0_0']
-                    yx = max(10, min(tw - 40, px + (pw + 10 if p_cls == 'player_right' else -30)))
-                    yy = py + ph - yeti_img.height
-                    canvas.paste(yeti_img, (yx, yy), yeti_img)
+                        labels.append((CLASS_TO_ID[p_cls], p_norm_xc, p_norm_yc, p_norm_w, p_norm_h))
 
-        # 3. 散落通用金币货币 (不标注)
+                        p_poly_pts = extract_polygon_contour(p_img, offset_x=px, offset_y=py)
+                        json_shapes.append({
+                            "label": p_cls,
+                            "points": p_poly_pts,
+                            "group_id": None,
+                            "description": "",
+                            "shape_type": "polygon",
+                            "flags": {}
+                        })
+
+                        # 伴生宠物雪人
+                        if random.random() < 0.35 and 'stand0_0' in distractors_dict:
+                            yeti_img = distractors_dict['stand0_0']
+                            yx = max(10, min(tw - 40, px + (pw + 10 if p_cls == 'player_right' else -30)))
+                            yy = py + ph - yeti_img.height
+                            canvas.paste(yeti_img, (yx, yy), yeti_img)
+                        break
+
+        # 4. 散落通用金币货币 (不标注)
         coin_keys = ['bronze_coin', 'gold_coin', 'meso_bills', 'meso_sack']
         for _ in range(random.randint(1, 4)):
             ck = random.choice(coin_keys)
@@ -463,15 +477,13 @@ def generate_dataset(num_images=100):
                 cy = random.randint(int(th * 0.4), th - 60)
                 canvas.paste(c_img, (cx, cy), c_img)
 
-        # 4. 图像微光影与色调扰动 (Domain Randomization)
+        # 5. 图像微光影扰动
         if random.random() < 0.5:
-            enh_bright = ImageEnhance.Brightness(canvas)
-            canvas = enh_bright.enhance(random.uniform(0.90, 1.10))
+            canvas = ImageEnhance.Brightness(canvas).enhance(random.uniform(0.90, 1.10))
         if random.random() < 0.4:
-            enh_contrast = ImageEnhance.Contrast(canvas)
-            canvas = enh_contrast.enhance(random.uniform(0.90, 1.12))
+            canvas = ImageEnhance.Contrast(canvas).enhance(random.uniform(0.90, 1.12))
 
-        # 5. 保存生成的 JPG, YOLO TXT 标注与 AnyLabeling 多边形 JSON 标注
+        # 6. 保存 JPG, TXT 与 AnyLabeling 多边形 JSON
         out_basename = f"synth_{now_str}_{img_idx:03d}"
         rgb_img = canvas.convert("RGB")
         rgb_img.save(os.path.join(RAW_OUTPUT_DIR, f"{out_basename}.jpg"), quality=95)
@@ -491,7 +503,7 @@ def generate_dataset(num_images=100):
                 "imageWidth": tw
             }, f, indent=2, ensure_ascii=False)
 
-        # 6. 生成前 15 张的可视化调试质检图 (绘制多边形轮廓)
+        # 7. 导出前 15 张质检调试图
         if img_idx < 15:
             dbg_cv = cv2.cvtColor(np.array(rgb_img), cv2.COLOR_RGB2BGR)
             for shape in json_shapes:
