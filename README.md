@@ -1,92 +1,95 @@
-# ⚡ SecretWeapon - 2D 横版游戏 AI 目标检测与智能自动化决策系统
+# ⚡ SecretWeapon - 2D Action Game AI Vision & Intelligent Automation Framework
 
-本项目是一套专为 2D 横版动作类游戏设计的端到端智能自动化框架。涵盖基于 **PyQt5 + DirectInput** 的实时控制中心、**Ultralytics YOLOv8** 目标检测引擎、**XML 拓扑 Foothold A* 寻路系统**、**上帝视角 (God-View) 全景追踪** 与 **单向防抖智能战斗引擎**。
-
----
-
-## 🌟 核心功能特性
-
-1. **实时多目标检测 (YOLOv8)**
-   - 毫秒级识别玩家角色（多朝向/攀爬）、各类型怪物、绳索梯子与传送门。
-   - 智能处理受击闪烁与扣血无敌帧，内置角色坐标记忆与防抖维持。
-
-2. **高级拓扑 A* 寻路与物理动作规划 (Foothold A\* Pathfinder)**
-   - 直接解析地图物理结构数据（提取平台 Foothold 与绳梯坐标）。
-   - 支持全图跨平台寻路：智能规划水平跑动、悬空梯起跳抓绳 (`Jump + UP`)、垂直攀爬与高低平台跳跃。
-   - 支持可视化航点录制与闭环自动化循环巡逻。
-
-3. **上帝视角 (God-View) 全景小地图追踪**
-   - 动态模板匹配追踪小地图角色位置。
-   - 全景展开显示地图真实物理结构、录制路点与实时移动轨迹。
-
-4. **智能战斗与技能决策系统 (Decision Engine)**
-   - **100% 朝向锁定**：出招前依据怪物相对方位瞬间轻点方向键，刀刀正面命中。
-   - **独立技能冷却**：普攻与群攻支持各自独立配置触发间隔。
-   - **单向/双向群攻模式**：支持单侧聚怪判定与环形全屏范围判定。
-   - **单向无怪静默防抖**：遇怪 0 延迟瞬发切入战斗；无怪时持续计时，中途遇怪即刻清零，确保平稳连续输出。
-
-5. **全自动 Buff 与消耗品管理**
-   - 多技能独立倒计时自动补 Buff。
+An end-to-end computer vision and intelligent decision-making automation framework designed for 2D side-scrolling action games. It integrates a **PyQt5 + DirectInput** real-time control console, **Ultralytics YOLOv8** object detection engine, **XML Foothold Topological A\* Pathfinding System**, **God-View Global Panoramic Tracking**, and an **Intelligent Combat Decision Engine**.
 
 ---
 
-## 📁 目录结构
+## 🌟 Key Features
+
+1. **Real-Time Multi-Target Object Detection (YOLOv8)**
+   - High-throughput, low-latency detection of player states (left, right, climbing), various monster categories, ropes, ladders, and portals.
+   - Built-in character position memory and stabilization to handle damage invincibility blinking and temporary occlusion.
+
+2. **Topological A\* Pathfinding & Physics Action Planning (Foothold A\* Engine)**
+   - Directly parses map physics geometry (extracting physical platforms, footholds, and ladder/rope topologies).
+   - Seamless cross-platform route planning: horizontal running, hanging-ladder jump-climbing (`Jump + UP`), vertical ascension, and drop-down jumps.
+   - Supports visual waypoint recording, loop patrol route generation, and dynamic replanning.
+
+3. **God-View Minimap Tracking & World Coordinate Mapping**
+   - Dynamic template matching to track character position on the minimap in real time.
+   - Real-time panoramic display of map physics footholds, recorded patrol nodes, and character trajectory.
+
+4. **Intelligent Combat & Skill Decision Engine**
+   - **100% Guaranteed Target Facing**: Pre-taps directional keys before skill execution based on relative target coordinates to guarantee frontal hits.
+   - **Independent Skill Cooldowns**: Fully decoupled attack cadence timers for normal attacks and AoE skills.
+   - **Directional & Omni-directional AoE Modes**: Supports forward-facing cluster detection as well as surrounding area-of-effect triggers.
+   - **Unidirectional Silence Debounce Timer**: Instant 0-delay transition into combat upon encountering monsters; requires continuous silence duration before smoothly returning to patrol mode.
+
+5. **Automated Buff & Consumables Manager**
+   - Independent countdown timers for multi-skill buff upkeep and automatic re-casting.
+
+---
+
+## 📁 Directory Structure
 
 ```
 SecretWeapon/
-├── a_star_pathfinder.py          # [寻路核心] 拓扑 A* 寻路与动作序列生成
-├── map_parser.py                 # [地图解析] 解析 XML 地图 Foothold 与绳索
-├── decision_engine.py            # [决策大脑] 有限状态机 (FSM)、战斗与巡逻仲裁
-├── game_controller.py            # [输入控制] DirectInput 扫描码硬件级键鼠模拟
-├── minimap_tracker.py            # [小地图] 上帝视角全景映射与路点管理器
-├── yolo_detector.py              # [主控界面] 综合控制台 GUI 与实时推理引擎
-├── gui_collector.py              # [数据采集] 游戏画面多模式自动采集工具
-├── train_yolo.py                 # [模型训练] YOLOv8 数据集切分与自动训练
-├── generate_synthetic_dataset.py # [合成增强] 合成训练图像扩增工具
-├── requirements.txt              # Python 依赖清单
-├── dataset/                      # 配置文件与模版
-│   ├── combat_config.json        # 战斗技能与状态配置持久化文件
-│   └── player_template.png       # 小地图角色追踪模版
-├── map/                          # 地图拓扑数据
-└── run_detector.bat              # 主程序一键启动脚本
+├── a_star_pathfinder.py          # [Pathfinding] Topological A* search & action sequence generator
+├── map_parser.py                 # [Map Parser] XML foothold and ladder/rope geometry parser
+├── decision_engine.py            # [Decision Engine] Finite State Machine (FSM), combat arbitration
+├── game_controller.py            # [Input Controller] Hardware-level DirectInput key simulation
+├── minimap_tracker.py            # [Minimap Tracking] God-View panoramic mapping & route manager
+├── yolo_detector.py              # [Main Application] PyQt5 control console & live inference GUI
+├── gui_collector.py              # [Data Collection] Multi-mode game screen capture tool
+├── train_yolo.py                 # [Training Pipeline] Automated dataset split & YOLOv8 training
+├── generate_synthetic_dataset.py # [Data Synthesis] Synthetic image generation & augmentation
+├── requirements.txt              # Python dependency manifest
+├── dataset/                      # Configuration files & templates
+│   ├── combat_config.json        # Persistent combat & skill configurations
+│   └── player_template.png       # Minimap character tracking template
+├── map/                          # Map topology XML files
+└── run_detector.bat              # One-click launch script
 ```
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 1. 安装环境依赖
+### 1. Prerequisites & Environment Setup
 
-推荐使用 Python 3.10+ 环境：
+Python 3.10+ is recommended:
 
 ```bash
+git clone https://github.com/QiyanWong/SecretWeapon.git
+cd SecretWeapon
 pip install -r requirements.txt
 ```
 
-### 2. 一键启动主控制台
+### 2. Launch Main Console
 
+Simply double-click:
 ```bash
 run_detector.bat
 ```
-或者在终端中运行：
+Or launch via command line:
 ```bash
 python yolo_detector.py
 ```
 
 ---
 
-## 🎮 使用指南
+## 🎮 User Guide
 
-1. **选择游戏窗口**：在 GUI 主界面下拉选择游戏窗口。
-2. **载入地图 XML (可选)**：在寻路面板选择当前地图对应的 XML 文件，开启全图 A* 物理拓扑巡逻。
-3. **配置战斗与 Buff 技能**：
-   - 设定普攻/群攻按键与独立攻击间隔；
-   - 设定触发怪数与单向/双向判定；
-   - 添加自动持续 Buff 技能键与冷却时间。
-4. **开启打怪**：点击 **`⚡ 开始打怪`** 按钮即可全自动运行。
+1. **Select Game Window**: Choose the target game window from the GUI dropdown menu.
+2. **Load Map XML (Optional)**: Select the corresponding map XML file from the pathfinding panel to enable physics-aware topological A* navigation.
+3. **Configure Combat & Buff Skills**:
+   - Set keybindings and independent attack intervals for basic attack and AoE skill;
+   - Set monster count threshold and Single-Direction / Bi-Directional detection mode;
+   - Add automated buff keys and their respective cooldown timers.
+4. **Start Automation**: Click **`⚡ Start Bot / 打怪`** to begin fully automated hunting and patrol.
 
 ---
 
-## ⚠️ 免责声明 (Disclaimer)
+## ⚠️ Disclaimer
 
-本项目仅供计算机视觉、图算法及自动化测试相关的学习与学术研究用途。请勿将本项目用于任何破坏游戏公平性或违反游戏最终用户许可协议 (EULA) 的商业及非法行为。
+This project is developed exclusively for educational, computer vision research, and algorithm study purposes. Do not use this software for any commercial purposes or in violation of any game's End User License Agreement (EULA) or Terms of Service.
