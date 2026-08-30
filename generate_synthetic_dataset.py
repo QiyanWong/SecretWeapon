@@ -302,8 +302,8 @@ def generate_dataset(num_images=100):
         occupied_boxes = [] # 用于防过度重叠 [ (x1, y1, x2, y2) ]
         present_monster_classes = set()
 
-        # 1. 决定本张图生成的怪物数量 (2 ~ 5 只)
-        num_mobs = random.randint(2, 5)
+        # 1. 决定本张图生成的怪物数量 (提升密集度: 3 ~ 7 只)
+        num_mobs = random.randint(3, 7)
         
         # 提取怪物 (优先从全覆盖洗牌池提取，池空则重新洗牌循环)
         chosen_mob_items = []
@@ -362,8 +362,8 @@ def generate_dataset(num_images=100):
                     dy = max(10, min(th - 40, pos_y + sh - random.randint(5, 20)))
                     canvas.paste(d_img, (dx, dy), d_img)
 
-        # 2. 放置玩家角色 (75% 概率出现玩家)
-        if random.random() < 0.75:
+        # 2. 放置玩家角色 (85% 概率出现玩家)
+        if random.random() < 0.85:
             p_cls = random.choice(['player_left', 'player_right', 'player_climb'])
             if player_sprites.get(p_cls):
                 p_img = random.choice(player_sprites[p_cls])
@@ -386,8 +386,8 @@ def generate_dataset(num_images=100):
 
                 labels.append((CLASS_TO_ID[p_cls], p_norm_xc, p_norm_yc, p_norm_w, p_norm_h))
 
-                # 伴生宠物小白雪人 (30% 概率跟在玩家身边，不标注)
-                if random.random() < 0.30 and 'stand0_0' in distractors_dict:
+                # 伴生宠物小白雪人 (35% 概率跟在玩家身边，不标注)
+                if random.random() < 0.35 and 'stand0_0' in distractors_dict:
                     yeti_img = distractors_dict['stand0_0']
                     yx = max(10, min(tw - 40, px + (pw + 10 if p_cls == 'player_right' else -30)))
                     yy = py + ph - yeti_img.height
@@ -395,7 +395,7 @@ def generate_dataset(num_images=100):
 
         # 3. 散落通用金币货币 (不标注)
         coin_keys = ['bronze_coin', 'gold_coin', 'meso_bills', 'meso_sack']
-        for _ in range(random.randint(1, 3)):
+        for _ in range(random.randint(1, 4)):
             ck = random.choice(coin_keys)
             if ck in drops_dict:
                 c_img = drops_dict[ck]
@@ -420,8 +420,8 @@ def generate_dataset(num_images=100):
             for lbl in labels:
                 f.write(f"{lbl[0]} {lbl[1]:.6f} {lbl[2]:.6f} {lbl[3]:.6f} {lbl[4]:.6f}\n")
 
-        # 6. 生成前 10 张的可视化调试质检图
-        if img_idx < 10:
+        # 6. 生成前 15 张的可视化调试质检图
+        if img_idx < 15:
             dbg_cv = cv2.cvtColor(np.array(rgb_img), cv2.COLOR_RGB2BGR)
             for (cid, xc, yc, w, h) in labels:
                 x1 = int((xc - w / 2) * tw)
@@ -445,6 +445,6 @@ def generate_dataset(num_images=100):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="MapleStory Synthetic Dataset Generator")
-    parser.add_argument("--num", type=int, default=110, help="Total number of images to synthesize")
+    parser.add_argument("--num", type=int, default=160, help="Total number of images to synthesize")
     args = parser.parse_args()
     generate_dataset(num_images=args.num)
