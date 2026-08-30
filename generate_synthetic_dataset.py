@@ -208,6 +208,26 @@ def get_tight_bbox(sprite):
     return int(x_min), int(y_min), int(x_max), int(y_max)
 
 
+def extract_polygon_contour(sprite_img, offset_x=0, offset_y=0, epsilon=1.2):
+    """
+    通过 RGBA 贴图的 Alpha 通道自动提取平滑多边形轮廓点集 [[x, y], ...]
+    """
+    alpha = np.array(sprite_img.getchannel('A'))
+    mask = (alpha > 15).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        w, h = sprite_img.size
+        return [[offset_x, offset_y], [offset_x + w, offset_y], [offset_x + w, offset_y + h], [offset_x, offset_y + h]]
+    c = max(contours, key=cv2.contourArea)
+    approx = cv2.approxPolyDP(c, epsilon=epsilon, closed=True)
+    points = []
+    for pt in approx:
+        px = round(float(pt[0][0] + offset_x), 1)
+        py = round(float(pt[0][1] + offset_y), 1)
+        points.append([px, py])
+    return points
+
+
 def generate_dataset(num_images=100):
     """
     一键生成全覆盖、防幻觉的高质量合成数据集
@@ -311,6 +331,7 @@ def generate_dataset(num_images=100):
             canvas = bg_img.resize((tw, th), Image.Resampling.LANCZOS)
 
         labels = [] # [ (cls_id, x_center, y_center, w, h) ]
+        json_shapes = [] # AnyLabeling 多边形轮廓标注
         occupied_boxes = [] # 用于防过度重叠 [ (x1, y1, x2, y2) ]
         present_monster_classes = set()
 
@@ -365,6 +386,17 @@ def generate_dataset(num_images=100):
                 labels.append((cls_id, norm_xc, norm_yc, norm_w, norm_h))
                 occupied_boxes.append((abs_x1, abs_y1, abs_x2, abs_y2))
 
+                # 提取平滑多边形轮廓点集 (AnyLabeling 专属 polygon 格式)
+                poly_pts = extract_polygon_contour(m_img_scaled, offset_x=pos_x, offset_y=pos_y)
+                json_shapes.append({
+                    "label": m_cls,
+                    "points": poly_pts,
+                    "group_id": None,
+                    "description": "",
+                    "shape_type": "polygon",
+                    "flags": {}
+                })
+
             # 伴生掉落物逻辑: 在该怪物脚下/旁边概率生成它自己的独有战利品 (不标注)
             if random.random() < 0.45:
                 drop_k = MONSTER_TO_UNIQUE_DROP.get(m_cls)
@@ -398,6 +430,17 @@ def generate_dataset(num_images=100):
 
                 labels.append((CLASS_TO_ID[p_cls], p_norm_xc, p_norm_yc, p_norm_w, p_norm_h))
 
+                # 提取玩家多边形轮廓点集 (AnyLabeling polygon)
+                p_poly_pts = extract_polygon_contour(p_img, offset_x=px, offset_y=py)
+                json_shapes.append({
+                    "label": p_cls,
+                    "points": p_poly_pts,
+                    "group_id": None,
+                    "description": "",
+                    "shape_type": "polygon",
+                    "flags": {}
+                })
+
                 # 伴生宠物小白雪人 (35% 概率跟在玩家身边，不标注)
                 if random.random() < 0.35 and 'stand0_0' in distractors_dict:
                     yeti_img = distractors_dict['stand0_0']
@@ -423,7 +466,7 @@ def generate_dataset(num_images=100):
             enh_contrast = ImageEnhance.Contrast(canvas)
             canvas = enh_contrast.enhance(random.uniform(0.90, 1.12))
 
-        # 5. 保存生成的 JPG, YOLO TXT 标注与 AnyLabeling JSON 标注
+        # 5. 保存生成的 JPG, YOLO TXT 标注与 AnyLabeling 多边形 JSON 标注
         out_basename = f"synth_{now_str}_{img_idx:03d}"
         rgb_img = canvas.convert("RGB")
         rgb_img.save(os.path.join(RAW_OUTPUT_DIR, f"{out_basename}.jpg"), quality=95)
@@ -431,23 +474,6 @@ def generate_dataset(num_images=100):
         with open(os.path.join(RAW_OUTPUT_DIR, f"{out_basename}.txt"), 'w', encoding='utf-8') as f:
             for lbl in labels:
                 f.write(f"{lbl[0]} {lbl[1]:.6f} {lbl[2]:.6f} {lbl[3]:.6f} {lbl[4]:.6f}\n")
-
-        # 生成 AnyLabeling JSON 格式
-        json_shapes = []
-        for (cid, xc, yc, w, h) in labels:
-            x1 = (xc - w / 2.0) * tw
-            y1 = (yc - h / 2.0) * th
-            x2 = (xc + w / 2.0) * tw
-            y2 = (yc + h / 2.0) * th
-            cname = CLASS_LIST[cid]
-            json_shapes.append({
-                "label": cname,
-                "points": [[round(x1, 1), round(y1, 1)], [round(x2, 1), round(y2, 1)]],
-                "group_id": None,
-                "description": "",
-                "shape_type": "rectangle",
-                "flags": {}
-            })
 
         with open(os.path.join(RAW_OUTPUT_DIR, f"{out_basename}.json"), 'w', encoding='utf-8') as f:
             json.dump({
@@ -460,17 +486,15 @@ def generate_dataset(num_images=100):
                 "imageWidth": tw
             }, f, indent=2, ensure_ascii=False)
 
-        # 6. 生成前 15 张的可视化调试质检图
+        # 6. 生成前 15 张的可视化调试质检图 (绘制多边形轮廓)
         if img_idx < 15:
             dbg_cv = cv2.cvtColor(np.array(rgb_img), cv2.COLOR_RGB2BGR)
-            for (cid, xc, yc, w, h) in labels:
-                x1 = int((xc - w / 2) * tw)
-                y1 = int((yc - h / 2) * th)
-                x2 = int((xc + w / 2) * tw)
-                y2 = int((yc + h / 2) * th)
-                cname = CLASS_LIST[cid]
-                cv2.rectangle(dbg_cv, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(dbg_cv, cname, (x1, max(15, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+            for shape in json_shapes:
+                s_pts = np.array(shape["points"], dtype=np.int32).reshape((-1, 1, 2))
+                s_lbl = shape["label"]
+                cv2.polylines(dbg_cv, [s_pts], isClosed=True, color=(0, 255, 0), thickness=2)
+                top_left = s_pts.min(axis=0)[0]
+                cv2.putText(dbg_cv, s_lbl, (top_left[0], max(15, top_left[1] - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
             cv2.imwrite(os.path.join(DEBUG_OUTPUT_DIR, f"debug_{out_basename}.jpg"), dbg_cv)
 
         generated_count += 1
