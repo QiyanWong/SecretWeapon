@@ -25,6 +25,6 @@ names:
   23: lupin
   24: rocky_mask
   25: crab
-path: E:\SecretWeapon\dataset
+path: ./dataset
 train: images/train
 val: images/val

@@ -105,7 +105,7 @@ def prepare_dataset(split_ratio=0.8):
 def create_data_yaml(classes=CLASS_NAMES):
     """自动生成 YOLOv8 格式的配置文件 data.yaml"""
     data_config = {
-        'path': DATASET_DIR,
+        'path': './dataset',
         'train': 'images/train',
         'val': 'images/val',
         'names': {i: name for i, name in enumerate(classes)}

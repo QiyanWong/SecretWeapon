@@ -1,5 +1,9 @@
 @echo off
+cd /d "%~dp0"
 chcp 65001 > NUL
-echo 正在启动 冒险岛 2D 透明素材自动合成生成器...
-"C:\Users\Chico\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" generate_synthetic_dataset.py --num 50
+echo 正在启动 2D 透明素材自动合成生成器...
+python generate_synthetic_dataset.py --num 50
+if errorlevel 1 (
+    echo [ERROR] 运行失败，请确认 Python 环境与依赖已正确安装。
+)
 pause

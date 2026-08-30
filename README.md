@@ -33,7 +33,7 @@
 ## 📁 目录结构
 
 ```
-e:/SecretWeapon/
+SecretWeapon/
 ├── a_star_pathfinder.py          # [寻路核心] 拓扑 A* 寻路与动作序列生成
 ├── map_parser.py                 # [地图解析] 解析 XML 地图 Foothold 与绳索
 ├── decision_engine.py            # [决策大脑] 有限状态机 (FSM)、战斗与巡逻仲裁

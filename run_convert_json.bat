@@ -1,7 +1,12 @@
 @echo off
+cd /d "%~dp0"
 chcp 65001 > NUL
 echo Converting AnyLabeling/Labelme JSON to YOLO txt format...
-"C:\Users\Chico\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" convert_json_to_yolo.py
-echo.
-echo Conversion Completed!
+python convert_json_to_yolo.py
+if errorlevel 1 (
+    echo [ERROR] Conversion failed!
+) else (
+    echo.
+    echo Conversion Completed!
+)
 pause
