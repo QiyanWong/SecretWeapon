@@ -2,29 +2,27 @@ names:
   0: player_left
   1: player_right
   2: player_climb
-  3: rope
-  4: portal
-  5: orange_mushroom
-  6: red_snail
-  7: slime
-  8: bubbling
-  9: horny_mushroom
-  10: zombie_mushroom
-  11: axe_stump
-  12: wild_boar
-  13: pig
-  14: ribbon_pig
-  15: fire_boar
-  16: jr_necki
-  17: croco
-  18: drake
-  19: evil_eye
-  20: cold_eye
-  21: jr_wraith
-  22: wooden_mask
-  23: lupin
-  24: rocky_mask
-  25: crab
+  3: orange_mushroom
+  4: red_snail
+  5: slime
+  6: bubbling
+  7: horny_mushroom
+  8: zombie_mushroom
+  9: axe_stump
+  10: wild_boar
+  11: pig
+  12: ribbon_pig
+  13: fire_boar
+  14: jr_necki
+  15: croco
+  16: drake
+  17: evil_eye
+  18: cold_eye
+  19: jr_wraith
+  20: wooden_mask
+  21: lupin
+  22: rocky_mask
+  23: crab
 path: ./dataset
 train: images/train
 val: images/val

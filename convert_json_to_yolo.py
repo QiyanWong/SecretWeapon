@@ -44,13 +44,11 @@ LABEL_MAPPING = {
     '红螃蟹': 'crab'
 }
 
-# 保持固定的类别顺序
+# 保持固定的类别顺序 (24 类)
 CLASS_LIST = [
     'player_left',
     'player_right',
     'player_climb',
-    'rope',
-    'portal',
     'orange_mushroom',
     'red_snail',
     'slime',

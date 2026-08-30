@@ -6,7 +6,7 @@ import random
 import datetime
 import cv2
 import numpy as np
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageFilter
 
 # 修复控制台 UTF-8 输出
 if hasattr(sys.stdout, 'reconfigure'):
@@ -16,350 +16,435 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSET_DIR = os.path.join(BASE_DIR, "synthetic_assets")
 BG_DIR = os.path.join(ASSET_DIR, "backgrounds")
 MONSTER_DIR = os.path.join(ASSET_DIR, "monsters")
+PLAYER_DIR = os.path.join(ASSET_DIR, "player")
+DROPS_DIR = os.path.join(ASSET_DIR, "drops")
+DISTRACTORS_DIR = os.path.join(ASSET_DIR, "distractors")
+
 RAW_OUTPUT_DIR = os.path.join(BASE_DIR, "dataset", "raw_images")
+DEBUG_OUTPUT_DIR = os.path.join(BASE_DIR, "dataset", "synthetic_debug")
+os.makedirs(RAW_OUTPUT_DIR, exist_ok=True)
+os.makedirs(DEBUG_OUTPUT_DIR, exist_ok=True)
 
-# 引入现有的类别列表与中文/常用名映射
-from convert_json_to_yolo import CLASS_LIST, CLASS_TO_ID, LABEL_MAPPING
+# 24 类别定义与映射 (排除 rope 和 portal，仅保留 3 种玩家姿态 + 21 种活体怪物)
+CLASS_LIST = [
+    'player_left',
+    'player_right',
+    'player_climb',
+    'orange_mushroom',
+    'red_snail',
+    'slime',
+    'bubbling',
+    'horny_mushroom',
+    'zombie_mushroom',
+    'axe_stump',
+    'wild_boar',
+    'pig',
+    'ribbon_pig',
+    'fire_boar',
+    'jr_necki',
+    'croco',
+    'drake',
+    'evil_eye',
+    'cold_eye',
+    'jr_wraith',
+    'wooden_mask',
+    'lupin',
+    'rocky_mask',
+    'crab'
+]
+CLASS_TO_ID = {name: i for i, name in enumerate(CLASS_LIST)}
 
-def load_all_sprite_items():
+# 怪物专属战利品绑定映射 (同台伴生逻辑: 只有图里有该怪，才会在其身旁撒落该战利品)
+MONSTER_TO_UNIQUE_DROP = {
+    'orange_mushroom': 'orange_mushroom_cap',
+    'red_snail':       'red_snail_shell',
+    'slime':           'squishy_liquid',
+    'bubbling':        'bubbling_bubble',
+    'horny_mushroom':  'horny_mushroom_cap',
+    'zombie_mushroom': 'charm_of_the_undead',
+    'axe_stump':       'firewood',
+    'wild_boar':       'wild_boar_tooth',
+    'pig':             'pig_head',
+    'ribbon_pig':      'pig_ribbon',
+    'fire_boar':       'fire_boar_tooth',
+    'jr_necki':        'jr_necki_skin',
+    'croco':           'ligator_skin',
+    'drake':           'drake_skull',
+    'evil_eye':        'evil_eye_tail',
+    'cold_eye':        'cold_eye_tail',
+    'jr_wraith':       'tablecloth',
+    'wooden_mask':     'wooden_board',
+    'lupin':           'lupin_banana',
+    'rocky_mask':      'rocky_mask_doll',
+    'crab':            'lorang_claw'
+}
+
+# 地图生态与怪物/掉落物主题绑定
+BIOME_MAPPING = {
+    '沼泽地': {
+        'mobs': ['croco', 'jr_necki'],
+        'drops': ['ligator_skin', 'jr_necki_skin'],
+        'props': ['swamp_purple_flower', 'sabitrama_herb', 'herb_bunch']
+    },
+    '北部训练场': {
+        'mobs': ['slime', 'horny_mushroom', 'zombie_mushroom', 'orange_mushroom', 'red_snail', 'pig'],
+        'drops': ['squishy_liquid', 'horny_mushroom_cap', 'charm_of_the_undead', 'orange_mushroom_cap', 'red_snail_shell', 'pig_head'],
+        'props': []
+    },
+    '地铁一号线': {
+        'mobs': ['bubbling', 'jr_wraith'],
+        'drops': ['bubbling_bubble', 'tablecloth'],
+        'props': []
+    },
+    '勇士部落北部': {
+        'mobs': ['axe_stump', 'wild_boar', 'pig', 'ribbon_pig', 'fire_boar'],
+        'drops': ['firewood', 'wild_boar_tooth', 'pig_head', 'pig_ribbon', 'fire_boar_tooth'],
+        'props': []
+    },
+    '森林迷宫': {
+        'mobs': ['lupin', 'fire_boar', 'drake', 'evil_eye'],
+        'drops': ['lupin_banana', 'fire_boar_tooth', 'drake_skull', 'evil_eye_tail'],
+        'props': []
+    },
+    '石人寺院': {
+        'mobs': ['wooden_mask', 'rocky_mask'],
+        'drops': ['wooden_board', 'rocky_mask_doll'],
+        'props': []
+    },
+    '遗迹': {
+        'mobs': ['wooden_mask', 'rocky_mask'],
+        'drops': ['wooden_board', 'rocky_mask_doll'],
+        'props': []
+    },
+    '冰冷的洞穴': {
+        'mobs': ['evil_eye', 'cold_eye', 'jr_wraith', 'drake'],
+        'drops': ['evil_eye_tail', 'cold_eye_tail', 'tablecloth', 'drake_skull'],
+        'props': []
+    },
+    '黄金海滩': {
+        'mobs': ['crab', 'lupin', 'red_snail', 'slime'],
+        'drops': ['lorang_claw', 'lupin_banana', 'red_snail_shell', 'squishy_liquid'],
+        'props': []
+    }
+}
+
+
+def load_all_monster_sprites():
     """
-    扫描并加载所有的怪物与玩家独立素材帧，返回包含每个形态独立图像对象的列表
+    加载 21 种怪物的全部 183 个独立活体帧，按类别归类并建立全覆盖抽取列表
     """
-    import re
-    sprite_items = [] # [ {"class_name": ..., "image": ..., "source": ...} ]
+    all_sprites = {} # { class_name: [ {"image": Image, "name": ...}, ... ] }
+    flat_sprite_deck = [] # [ {"class_name": ..., "image": ..., "name": ...} ]
 
-    if not os.path.exists(MONSTER_DIR):
-        os.makedirs(MONSTER_DIR, exist_ok=True)
-
-    # 1. 扫描子文件夹
-    subdirs = [d for d in os.listdir(MONSTER_DIR) if os.path.isdir(os.path.join(MONSTER_DIR, d))]
-    for sd in subdirs:
-        raw_name = sd.strip()
-        target_name = LABEL_MAPPING.get(raw_name, raw_name)
-        folder_path = os.path.join(MONSTER_DIR, sd)
-        png_files = glob.glob(os.path.join(folder_path, "*.png"))
-        for pf in png_files:
+    for cls in CLASS_LIST[3:]: # 排除前3个玩家类别
+        folder = os.path.join(MONSTER_DIR, cls)
+        if not os.path.exists(folder):
+            continue
+        all_sprites[cls] = []
+        pngs = glob.glob(os.path.join(folder, "*.png"))
+        for p in pngs:
             try:
-                img = Image.open(pf).convert("RGBA")
-                sprite_items.append({
-                    "class_name": target_name,
-                    "image": img,
-                    "source": os.path.basename(pf)
-                })
-            except Exception as e:
-                print(f"警告: 无法加载图片 {pf}: {e}")
+                img = Image.open(p).convert("RGBA")
+                item = {"class_name": cls, "image": img, "name": os.path.basename(p)}
+                all_sprites[cls].append(item)
+                flat_sprite_deck.append(item)
+            except Exception:
+                pass
 
-    # 2. 扫描根目录下的单个 PNG 文件 (智能解析怪物与玩家名称)
-    root_pngs = glob.glob(os.path.join(MONSTER_DIR, "*.png"))
-    for pf in root_pngs:
-        fname = os.path.basename(pf)
-        base_stem = os.path.splitext(fname)[0]
+    return all_sprites, flat_sprite_deck
 
-        # 玩家特判：plaer_left / player_left / player_right
-        if re.search(r'pla(?:y)?er_left', base_stem, re.IGNORECASE):
-            target_name = 'player_left'
-        elif re.search(r'pla(?:y)?er_right', base_stem, re.IGNORECASE):
-            target_name = 'player_right'
-        else:
-            # 智能匹配动作状态后缀 (stand, move, hit, die, attack, fly, jump, alert, swing) 并切分怪物原名
-            parts = re.split(r'(stand|move|hit|die|attack|fly|jump|alert|swing)', base_stem, flags=re.IGNORECASE)
-            raw_name = parts[0].strip(' ._-')
-            raw_name = re.sub(r'[\d\.\_\-]+$', '', raw_name).strip()
-            target_name = LABEL_MAPPING.get(raw_name, raw_name)
-        
-        try:
-            img = Image.open(pf).convert("RGBA")
-            sprite_items.append({
-                "class_name": target_name,
-                "image": img,
-                "source": fname
-            })
-        except Exception as e:
-            print(f"警告: 无法加载图片 {pf}: {e}")
 
-    return sprite_items
+def load_player_sprites():
+    """加载玩家角色的三种状态素材"""
+    player_sprites = {'player_left': [], 'player_right': [], 'player_climb': []}
+    for p_cls in player_sprites.keys():
+        folder = os.path.join(PLAYER_DIR, p_cls)
+        if os.path.exists(folder):
+            for p in glob.glob(os.path.join(folder, "*.png")):
+                try:
+                    img = Image.open(p).convert("RGBA")
+                    player_sprites[p_cls].append(img)
+                except Exception:
+                    pass
+    return player_sprites
 
-def load_monster_sprites():
-    """兼容旧接口"""
-    items = load_all_sprite_items()
-    res = {}
-    for it in items:
-        cls = it["class_name"]
-        if cls not in res:
-            res[cls] = []
-        res[cls].append(it["image"])
-    return res
+
+def load_drop_and_distractor_sprites():
+    """加载掉落物（金币、专属战利品）、宠物、植物素材"""
+    drops = {} # { drop_key: Image }
+    if os.path.exists(DROPS_DIR):
+        for d in os.listdir(DROPS_DIR):
+            sub = os.path.join(DROPS_DIR, d)
+            if os.path.isdir(sub):
+                pngs = glob.glob(os.path.join(sub, "*.png"))
+                if pngs:
+                    try:
+                        drops[d] = Image.open(pngs[0]).convert("RGBA")
+                    except Exception:
+                        pass
+
+    distractors = {}
+    if os.path.exists(DISTRACTORS_DIR):
+        for root, _, files in os.walk(DISTRACTORS_DIR):
+            for f in files:
+                if f.endswith(".png"):
+                    try:
+                        k = os.path.splitext(f)[0]
+                        distractors[k] = Image.open(os.path.join(root, f)).convert("RGBA")
+                    except Exception:
+                        pass
+                        
+    return drops, distractors
+
 
 def get_tight_bbox(sprite):
-    """
-    根据 RGBA 贴图的非透明像素 (Alpha > 10) 计算精准的紧凑包围框 (x_min, y_min, x_max, y_max)
-    """
+    """根据非透明像素 (Alpha > 10) 计算紧凑包围框"""
     alpha = np.array(sprite.getchannel('A'))
     non_zero = np.argwhere(alpha > 10)
     if non_zero.size == 0:
         return 0, 0, sprite.width, sprite.height
     y_min, x_min = non_zero.min(axis=0)
     y_max, x_max = non_zero.max(axis=0)
-    return int(x_min), int(y_min), int(x_max + 1), int(y_max + 1)
+    return int(x_min), int(y_min), int(x_max), int(y_max)
 
-def get_exact_polygon(sprite, paste_x, paste_y, approx_epsilon=0.003):
+
+def generate_dataset(num_images=100):
     """
-    通过 PNG Alpha 通道提取极致完美的怪物外边缘多边形轮廓点集 (Polygon Points)
-    完美贴合角色每一个像素细节，消除多余背景！
+    一键生成全覆盖、防幻觉的高质量合成数据集
     """
-    alpha = np.array(sprite.getchannel('A'))
-    _, thresh = cv2.threshold(alpha, 10, 255, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return []
-    
-    main_contour = max(contours, key=cv2.contourArea)
-    epsilon = max(1.0, approx_epsilon * cv2.arcLength(main_contour, True))
-    approx = cv2.approxPolyDP(main_contour, epsilon, True)
-    
-    points = []
-    for pt in approx:
-        px = round(float(pt[0][0] + paste_x), 1)
-        py = round(float(pt[0][1] + paste_y), 1)
-        points.append([px, py])
-    
-    return points
-
-def check_overlap(boxA, boxB, max_ioa=0.0):
-    """检测两个矩形框 (x1, y1, x2, y2) 是否存在任何重叠 (严格零重叠)"""
-    xA = max(boxA[0], boxB[0])
-    yA = max(boxA[1], boxB[1])
-    xB = min(boxA[2], boxB[2])
-    yB = min(boxA[3], boxB[3])
-
-    interArea = max(0, xB - xA) * max(0, yB - yA)
-    return interArea > 0
-
-def generate_synthetic_images(num_to_generate=30, target_w=1366, target_h=768, scale_mult=1.25):
-    """
-    自动合成指定数量的图片并导出 YOLO 格式的 .jpg 与 .txt 标注文件。
-    升级版：全形态滚动队列无遗漏放置、严格零重叠碰撞检测、1.25 倍尺寸！
-    """
-    os.makedirs(RAW_OUTPUT_DIR, exist_ok=True)
-    os.makedirs(BG_DIR, exist_ok=True)
-
-    # 1. 彻底清理之前生成的旧 synth_ 文件
-    old_synth_files = glob.glob(os.path.join(RAW_OUTPUT_DIR, "synth_*"))
-    for f in old_synth_files:
-        try:
-            os.remove(f)
-        except Exception:
-            pass
-    if old_synth_files:
-        print(f"🧹 已彻底删除上一批旧合成图片与标注文件共 {len(old_synth_files)} 个。")
-
-    bg_files = glob.glob(os.path.join(BG_DIR, "*.jpg")) + glob.glob(os.path.join(BG_DIR, "*.png")) + glob.glob(os.path.join(BG_DIR, "*.jpeg"))
+    bg_files = glob.glob(os.path.join(BG_DIR, "*.png"))
     if not bg_files:
-        print("【错误】未在 synthetic_assets/backgrounds 找到任何背景图！")
+        print(f"❌ 错误: 在 {BG_DIR} 中没有找到任何背景图片！")
         return
 
-    all_sprite_items = load_all_sprite_items()
-    if not all_sprite_items:
-        print("【错误】未在 synthetic_assets/monsters 找到任何透明 PNG 贴图！")
-        return
+    monster_sprites_by_cls, flat_monster_deck = load_all_monster_sprites()
+    player_sprites = load_player_sprites()
+    drops_dict, distractors_dict = load_drop_and_distractor_sprites()
 
-    print("=" * 65)
-    print("🎨 冒险岛合成数据集生成器 (全形态无遗漏 & 严格零重叠版)")
-    print(f"设定生成分辨率窗口: {target_w} x {target_h}")
-    print(f"素材尺寸放大系数: {scale_mult} 倍 (1.25x 黄金比例)")
-    print(f"已加载背景图: {len(bg_files)} 张")
-    print(f"已加载全部独立素材帧: {len(all_sprite_items)} 帧 (涵盖所有怪物的全部动作与玩家各形态)")
-    print("=" * 65)
+    print("=" * 75)
+    print(f"🚀 开始生成高质量 YOLOv8 训练数据集 (目标生成: {num_images} 张)")
+    print(f"   🏞️ 背景图数量: {len(bg_files)} 张")
+    print(f"   👾 活体怪物总帧数: {len(flat_monster_deck)} 帧 (保证 100% 全覆盖出场)")
+    print(f"   💰 掉落物/战利品总数: {len(drops_dict)} 种 (同台伴生，不标注)")
+    print(f"   🐾 宠物/互动植物总数: {len(distractors_dict)} 种 (负样本，不标注)")
+    print("=" * 75)
+
+    # 1. 建立怪物全覆盖洗牌队列 (保证每一个形态至少出现一次以上)
+    deck_queue = flat_monster_deck.copy()
+    random.shuffle(deck_queue)
 
     generated_count = 0
-    # 待放置的滚动队列，确保每个形态被持续轮转放置，放不下的自动留到下一张
-    overflow_queue = []
+    now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    for i in range(num_to_generate):
-        full_bg_path = random.choice(bg_files)
-        full_bg = Image.open(full_bg_path).convert("RGB")
-        fw, fh = full_bg.size
+    # 2. 阶段 A: 为 9 种背景各生成 1 张【纯背景负样本图】(0 怪物 0 标注，仅含自然背景或散落金币/植物)
+    print("\n[Phase 1] 正在生成 9 种不同地图的【纯背景负样本】(0 标注框，彻底抑制地图假阳性)...")
+    for bg_idx, bg_path in enumerate(bg_files):
+        bg_name = os.path.splitext(os.path.basename(bg_path))[0]
+        bg_img = Image.open(bg_path).convert("RGBA")
+        bw, bh = bg_img.size
 
-        # 从全景背景图中随机裁剪出一个 1366x768 视窗
-        if fw < target_w or fh < target_h:
-            ratio = max(target_w / fw, target_h / fh)
-            nw, nh = int(fw * ratio), int(fh * ratio)
-            full_bg_scaled = full_bg.resize((nw, nh), Image.Resampling.LANCZOS)
-            crop_left = random.randint(0, max(0, nw - target_w))
-            crop_top = random.randint(0, max(0, nh - target_h))
-            bg_img = full_bg_scaled.crop((crop_left, crop_top, crop_left + target_w, crop_top + target_h))
+        # 随机裁剪 1280x720 视口 (若原图较小则缩放或自适应)
+        tw, th = 1280, 720
+        if bw > tw and bh > th:
+            rx = random.randint(0, bw - tw)
+            ry = random.randint(0, bh - th)
+            crop_bg = bg_img.crop((rx, ry, rx + tw, ry + th))
         else:
-            crop_left = random.randint(0, max(0, fw - target_w))
-            crop_top = random.randint(0, max(0, fh - target_h))
-            bg_img = full_bg.crop((crop_left, crop_top, crop_left + target_w, crop_top + target_h))
+            crop_bg = bg_img.resize((tw, th), Image.Resampling.LANCZOS)
 
-        bg_w, bg_h = bg_img.size
+        # 随机在此纯背景图上撒落 2~4 个金币或该地图的专属植物 (无标签)
+        canvas = crop_bg.copy()
+        coin_keys = ['bronze_coin', 'gold_coin', 'meso_bills', 'meso_sack']
+        for _ in range(random.randint(1, 4)):
+            ck = random.choice(coin_keys)
+            if ck in drops_dict:
+                c_img = drops_dict[ck]
+                cx = random.randint(50, tw - 100)
+                cy = random.randint(int(th * 0.4), th - 80)
+                canvas.paste(c_img, (cx, cy), c_img)
 
-        # 构建本张图片尝试放置的素材列表：上一张未放下的优先 + 全部素材随机打乱
-        items_to_try = list(overflow_queue)
-        overflow_queue.clear()
-        
-        shuffled_pool = list(all_sprite_items)
-        random.shuffle(shuffled_pool)
-        for item in shuffled_pool:
-            if item not in items_to_try:
-                items_to_try.append(item)
+        # 若是沼泽地图，添加沼泽紫花 (无标签)
+        if '沼泽' in bg_name and 'swamp_purple_flower' in distractors_dict:
+            sf_img = distractors_dict['swamp_purple_flower']
+            sx = random.randint(100, tw - 150)
+            sy = random.randint(int(th * 0.5), th - 120)
+            canvas.paste(sf_img, (sx, sy), sf_img)
 
-        yolo_labels = []
-        json_shapes = []
-        placed_boxes = []
-
-        placed_in_this_frame = 0
-        skipped_in_this_frame = 0
-
-        for item in items_to_try:
-            chosen_cls = item["class_name"]
-            sprite_raw = item["image"]
-
-            # 数据增强：左右翻转
-            is_flipped = (random.random() > 0.5)
-            if is_flipped:
-                sprite_cur = sprite_raw.transpose(Image.FLIP_LEFT_RIGHT)
-            else:
-                sprite_cur = sprite_raw.copy()
-
-            # 决定翻转后的最终标注类别 (玩家严格定向映射)
-            if chosen_cls == 'player_left':
-                cls_name = 'player_right' if is_flipped else 'player_left'
-            elif chosen_cls == 'player_right':
-                cls_name = 'player_left' if is_flipped else 'player_right'
-            else:
-                cls_name = chosen_cls
-
-            if cls_name not in CLASS_TO_ID:
-                continue
-            cls_id = CLASS_TO_ID[cls_name]
-
-            # 缩放系数 (1.25 倍)
-            scale_factor = random.uniform(scale_mult * 0.96, scale_mult * 1.04)
-            new_w = max(10, int(sprite_cur.width * scale_factor))
-            new_h = max(10, int(sprite_cur.height * scale_factor))
-            sprite = sprite_cur.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-            # 微调亮度
-            brightness = random.uniform(0.94, 1.06)
-            sprite = ImageEnhance.Brightness(sprite).enhance(brightness)
-
-            x1, y1, x2, y2 = get_tight_bbox(sprite)
-            crop_w = x2 - x1
-            crop_h = y2 - y1
-
-            if crop_w <= 4 or crop_h <= 4:
-                continue
-
-            # 碰撞检测：尝试 50 次寻找完全不与其他物体重叠的位置
-            valid_spot = False
-            final_paste_x, final_paste_y = 0, 0
-            final_box = (0, 0, 0, 0)
-
-            # 留出 4px 安全边距以防贴合太近
-            margin = 4
-
-            for _attempt in range(50):
-                px = random.randint(0, max(1, bg_w - sprite.width))
-                py = random.randint(int(bg_h * 0.15), max(int(bg_h * 0.15) + 1, bg_h - sprite.height - 10))
-                
-                cand_box = (px + x1 - margin, py + y1 - margin, px + x2 + margin, py + y2 + margin)
-
-                # 检查是否与任何已放置的物体碰撞
-                if not any(check_overlap(cand_box, pb) for pb in placed_boxes):
-                    valid_spot = True
-                    final_paste_x, final_paste_y = px, py
-                    final_box = (px + x1, py + y1, px + x2, py + y2)
-                    break
-
-            if not valid_spot:
-                # 本张图片空间不足，自动放入滚动溢出队列，在下一张图片继续放置！
-                overflow_queue.append(item)
-                skipped_in_this_frame += 1
-                continue
-
-            # 找到合法空位，执行 Alpha 混合贴图并记录真实框
-            bg_img.paste(sprite, (final_paste_x, final_paste_y), mask=sprite)
-            placed_boxes.append((final_box[0] - margin, final_box[1] - margin, final_box[2] + margin, final_box[3] + margin))
-
-            box_x1, box_y1, box_x2, box_y2 = final_box
-            box_w = box_x2 - box_x1
-            box_h = box_y2 - box_y1
-            x_center = box_x1 + box_w / 2.0
-            y_center = box_y1 + box_h / 2.0
-
-            norm_xc = max(0.0, min(1.0, x_center / bg_w))
-            norm_yc = max(0.0, min(1.0, y_center / bg_h))
-            norm_w = max(0.0, min(1.0, box_w / bg_w))
-            norm_h = max(0.0, min(1.0, box_h / bg_h))
-
-            # 提取完美贴合角色轮廓的多边形顶点集 (Polygon)
-            poly_points = get_exact_polygon(sprite, final_paste_x, final_paste_y)
-            if len(poly_points) < 3:
-                poly_points = [[float(box_x1), float(box_y1)], [float(box_x2), float(box_y2)]]
-                shape_type = "rectangle"
-            else:
-                shape_type = "polygon"
-
-            yolo_labels.append(f"{cls_id} {norm_xc:.6f} {norm_yc:.6f} {norm_w:.6f} {norm_h:.6f}")
-            json_shapes.append({
-                "label": cls_name,
-                "points": poly_points,
-                "group_id": None,
-                "shape_type": shape_type,
-                "flags": {}
-            })
-            placed_in_this_frame += 1
-
-        if not yolo_labels:
-            continue
-
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-        img_name = f"synth_frame_{timestamp}_{i:03d}.jpg"
-        txt_name = f"synth_frame_{timestamp}_{i:03d}.txt"
-        json_name = f"synth_frame_{timestamp}_{i:03d}.json"
-
-        img_out_path = os.path.join(RAW_OUTPUT_DIR, img_name)
-        txt_out_path = os.path.join(RAW_OUTPUT_DIR, txt_name)
-        json_out_path = os.path.join(RAW_OUTPUT_DIR, json_name)
-
-        bg_img.save(img_out_path, quality=95)
-
-        with open(txt_out_path, "w", encoding="utf-8") as tf:
-            tf.write("\n".join(yolo_labels) + "\n")
-
-        json_data = {
-            "version": "5.0.1",
-            "flags": {},
-            "shapes": json_shapes,
-            "imagePath": img_name,
-            "imageData": None,
-            "imageHeight": bg_h,
-            "imageWidth": bg_w
-        }
-        with open(json_out_path, "w", encoding="utf-8") as jf:
-            json.dump(json_data, jf, ensure_ascii=False, indent=2)
+        # 保存纯背景图片与 0KB 空标注文件
+        out_name = f"synth_pure_bg_{now_str}_{bg_idx:02d}"
+        rgb_img = canvas.convert("RGB")
+        rgb_img.save(os.path.join(RAW_OUTPUT_DIR, f"{out_name}.jpg"), quality=95)
+        with open(os.path.join(RAW_OUTPUT_DIR, f"{out_name}.txt"), 'w', encoding='utf-8') as f:
+            pass # 纯背景空文件
 
         generated_count += 1
-        print(f"  [{generated_count:02d}/{num_to_generate}] 生成成功: 放置角色 {placed_in_this_frame} 个 (排队顺延至下张 {len(overflow_queue)} 个)")
+        print(f"   ✓ [纯背景负样本] {out_name}.jpg (地图: {bg_name})")
 
-    print("=" * 65)
-    print(f"✨ 成功合成导出 {generated_count} 张完美多边形标注数据集至: {RAW_OUTPUT_DIR}")
-    print("💡 已同时生成 YOLO .txt 与 AnyLabeling .json 格式！")
+    # 3. 阶段 B: 合成带怪物与玩家的训练图片 (保证 183 个怪物形态轮流全覆盖登场)
+    print(f"\n[Phase 2] 正在合成怪物与玩家战斗场景图片 (目标补齐至 {num_images} 张)...")
+    
+    img_idx = 0
+    while generated_count < num_images:
+        bg_path = random.choice(bg_files)
+        bg_name = os.path.splitext(os.path.basename(bg_path))[0]
+        bg_img = Image.open(bg_path).convert("RGBA")
+        bw, bh = bg_img.size
+
+        tw, th = 1280, 720
+        if bw > tw and bh > th:
+            rx = random.randint(0, bw - tw)
+            ry = random.randint(0, bh - th)
+            canvas = bg_img.crop((rx, ry, rx + tw, ry + th))
+        else:
+            canvas = bg_img.resize((tw, th), Image.Resampling.LANCZOS)
+
+        labels = [] # [ (cls_id, x_center, y_center, w, h) ]
+        occupied_boxes = [] # 用于防过度重叠 [ (x1, y1, x2, y2) ]
+        present_monster_classes = set()
+
+        # 1. 决定本张图生成的怪物数量 (2 ~ 5 只)
+        num_mobs = random.randint(2, 5)
+        
+        # 提取怪物 (优先从全覆盖洗牌池提取，池空则重新洗牌循环)
+        chosen_mob_items = []
+        for _ in range(num_mobs):
+            if not deck_queue:
+                deck_queue = flat_monster_deck.copy()
+                random.shuffle(deck_queue)
+            chosen_mob_items.append(deck_queue.pop(0))
+
+        # 放置怪物
+        for m_item in chosen_mob_items:
+            m_cls = m_item["class_name"]
+            m_img = m_item["image"]
+            present_monster_classes.add(m_cls)
+
+            # 随机水平镜像翻转 (朝左/朝右)
+            if random.random() < 0.5:
+                m_img = m_img.transpose(Image.FLIP_LEFT_RIGHT)
+
+            # 随机轻微尺寸缩放 (0.95 ~ 1.05)
+            scale = random.uniform(0.95, 1.05)
+            sw = max(10, int(m_img.width * scale))
+            sh = max(10, int(m_img.height * scale))
+            m_img_scaled = m_img.resize((sw, sh), Image.Resampling.LANCZOS)
+
+            # 随机在地面/中下部寻找放置位置
+            pos_x = random.randint(40, tw - sw - 40)
+            pos_y = random.randint(int(th * 0.25), th - sh - 40)
+
+            # 贴入画布
+            canvas.paste(m_img_scaled, (pos_x, pos_y), m_img_scaled)
+
+            # 计算精准 tight bounding box 并转换为 YOLO 归一化格式
+            bx1, by1, bx2, by2 = get_tight_bbox(m_img_scaled)
+            abs_x1 = pos_x + bx1
+            abs_y1 = pos_y + by1
+            abs_x2 = pos_x + bx2
+            abs_y2 = pos_y + by2
+
+            norm_xc = ((abs_x1 + abs_x2) / 2.0) / tw
+            norm_yc = ((abs_y1 + abs_y2) / 2.0) / th
+            norm_w = (abs_x2 - abs_x1) / tw
+            norm_h = (abs_y2 - abs_y1) / th
+
+            cls_id = CLASS_TO_ID.get(m_cls)
+            if cls_id is not None:
+                labels.append((cls_id, norm_xc, norm_yc, norm_w, norm_h))
+                occupied_boxes.append((abs_x1, abs_y1, abs_x2, abs_y2))
+
+            # 伴生掉落物逻辑: 在该怪物脚下/旁边概率生成它自己的独有战利品 (不标注)
+            if random.random() < 0.45:
+                drop_k = MONSTER_TO_UNIQUE_DROP.get(m_cls)
+                if drop_k and drop_k in drops_dict:
+                    d_img = drops_dict[drop_k]
+                    dx = max(10, min(tw - 40, pos_x + random.randint(-25, sw + 10)))
+                    dy = max(10, min(th - 40, pos_y + sh - random.randint(5, 20)))
+                    canvas.paste(d_img, (dx, dy), d_img)
+
+        # 2. 放置玩家角色 (75% 概率出现玩家)
+        if random.random() < 0.75:
+            p_cls = random.choice(['player_left', 'player_right', 'player_climb'])
+            if player_sprites.get(p_cls):
+                p_img = random.choice(player_sprites[p_cls])
+                pw, ph = p_img.size
+                px = random.randint(60, tw - pw - 60)
+                py = random.randint(int(th * 0.3), th - ph - 40)
+                canvas.paste(p_img, (px, py), p_img)
+
+                # 标注玩家
+                pbx1, pby1, pbx2, pby2 = get_tight_bbox(p_img)
+                pabs_x1 = px + pbx1
+                pabs_y1 = py + pby1
+                pabs_x2 = px + pbx2
+                pabs_y2 = py + pby2
+
+                p_norm_xc = ((pabs_x1 + pabs_x2) / 2.0) / tw
+                p_norm_yc = ((pabs_y1 + pabs_y2) / 2.0) / th
+                p_norm_w = (pabs_x2 - pabs_x1) / tw
+                p_norm_h = (pabs_y2 - pabs_y1) / th
+
+                labels.append((CLASS_TO_ID[p_cls], p_norm_xc, p_norm_yc, p_norm_w, p_norm_h))
+
+                # 伴生宠物小白雪人 (30% 概率跟在玩家身边，不标注)
+                if random.random() < 0.30 and 'stand0_0' in distractors_dict:
+                    yeti_img = distractors_dict['stand0_0']
+                    yx = max(10, min(tw - 40, px + (pw + 10 if p_cls == 'player_right' else -30)))
+                    yy = py + ph - yeti_img.height
+                    canvas.paste(yeti_img, (yx, yy), yeti_img)
+
+        # 3. 散落通用金币货币 (不标注)
+        coin_keys = ['bronze_coin', 'gold_coin', 'meso_bills', 'meso_sack']
+        for _ in range(random.randint(1, 3)):
+            ck = random.choice(coin_keys)
+            if ck in drops_dict:
+                c_img = drops_dict[ck]
+                cx = random.randint(50, tw - 100)
+                cy = random.randint(int(th * 0.4), th - 60)
+                canvas.paste(c_img, (cx, cy), c_img)
+
+        # 4. 图像微光影与色调扰动 (Domain Randomization)
+        if random.random() < 0.5:
+            enh_bright = ImageEnhance.Brightness(canvas)
+            canvas = enh_bright.enhance(random.uniform(0.90, 1.10))
+        if random.random() < 0.4:
+            enh_contrast = ImageEnhance.Contrast(canvas)
+            canvas = enh_contrast.enhance(random.uniform(0.90, 1.12))
+
+        # 5. 保存生成的 JPG 与 YOLO TXT 标注
+        out_basename = f"synth_{now_str}_{img_idx:03d}"
+        rgb_img = canvas.convert("RGB")
+        rgb_img.save(os.path.join(RAW_OUTPUT_DIR, f"{out_basename}.jpg"), quality=95)
+
+        with open(os.path.join(RAW_OUTPUT_DIR, f"{out_basename}.txt"), 'w', encoding='utf-8') as f:
+            for lbl in labels:
+                f.write(f"{lbl[0]} {lbl[1]:.6f} {lbl[2]:.6f} {lbl[3]:.6f} {lbl[4]:.6f}\n")
+
+        # 6. 生成前 10 张的可视化调试质检图
+        if img_idx < 10:
+            dbg_cv = cv2.cvtColor(np.array(rgb_img), cv2.COLOR_RGB2BGR)
+            for (cid, xc, yc, w, h) in labels:
+                x1 = int((xc - w / 2) * tw)
+                y1 = int((yc - h / 2) * th)
+                x2 = int((xc + w / 2) * tw)
+                y2 = int((yc + h / 2) * th)
+                cname = CLASS_LIST[cid]
+                cv2.rectangle(dbg_cv, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(dbg_cv, cname, (x1, max(15, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+            cv2.imwrite(os.path.join(DEBUG_OUTPUT_DIR, f"debug_{out_basename}.jpg"), dbg_cv)
+
+        generated_count += 1
+        img_idx += 1
+
+    print("\n" + "=" * 75)
+    print(f"🎉 全部合成完成！共生成 {generated_count} 张图像 (已保存至 dataset/raw_images/)")
+    print(f"🔍 质检预览图已输出至: {DEBUG_OUTPUT_DIR}")
+    print("=" * 75)
+
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="冒险岛 2D 透明素材自动合成训练集工具")
-    parser.add_argument("--num", type=int, default=30, help="要自动合成的图片数量 (默认 30 张)")
-    parser.add_argument("--width", type=int, default=1366, help="合成窗口宽度 (默认 1366)")
-    parser.add_argument("--height", type=int, default=768, help="合成窗口高度 (默认 768)")
-    parser.add_argument("--scale", type=float, default=1.25, help="怪物放大系数 (默认 1.25)")
+    parser = argparse.ArgumentParser(description="MapleStory Synthetic Dataset Generator")
+    parser.add_argument("--num", type=int, default=110, help="Total number of images to synthesize")
     args = parser.parse_args()
-
-    generate_synthetic_images(
-        num_to_generate=args.num,
-        target_w=args.width,
-        target_h=args.height,
-        scale_mult=args.scale
-    )
+    generate_dataset(num_images=args.num)
