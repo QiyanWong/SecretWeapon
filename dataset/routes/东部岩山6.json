@@ -1,0 +1,66 @@
+{
+  "version": "1.1",
+  "total_nodes": 6,
+  "nodes": [
+    {
+      "node_id": 1,
+      "x": 172,
+      "y": 102,
+      "x2": 172,
+      "y2": 102,
+      "action_type": "WALK",
+      "label": "N1_WALK"
+    },
+    {
+      "node_id": 2,
+      "x": 29,
+      "y": 96,
+      "x2": 29,
+      "y2": 96,
+      "action_type": "WALK",
+      "label": "N2_WALK"
+    },
+    {
+      "node_id": 3,
+      "x": 32,
+      "y": 96,
+      "x2": 32,
+      "y2": 96,
+      "action_type": "CLIMB",
+      "label": "N3_CLIMB"
+    },
+    {
+      "node_id": 4,
+      "x": 32,
+      "y": 43,
+      "x2": 32,
+      "y2": 43,
+      "action_type": "CLIMB_END",
+      "label": "N4_CLIMB_END"
+    },
+    {
+      "node_id": 5,
+      "x": 43,
+      "y": 43,
+      "x2": 43,
+      "y2": 43,
+      "action_type": "WALK",
+      "label": "N5_WALK"
+    },
+    {
+      "node_id": 6,
+      "x": 118,
+      "y": 43,
+      "x2": 118,
+      "y2": 43,
+      "action_type": "WALK",
+      "label": "N6_WALK"
+    }
+  ],
+  "minimap_crop": {
+    "left": 20,
+    "top": 149,
+    "width": 186,
+    "height": 150
+  }
+}

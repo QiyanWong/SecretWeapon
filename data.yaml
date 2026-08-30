@@ -1,0 +1,30 @@
+names:
+  0: player_left
+  1: player_right
+  2: player_climb
+  3: rope
+  4: portal
+  5: orange_mushroom
+  6: red_snail
+  7: slime
+  8: bubbling
+  9: horny_mushroom
+  10: zombie_mushroom
+  11: axe_stump
+  12: wild_boar
+  13: pig
+  14: ribbon_pig
+  15: fire_boar
+  16: jr_necki
+  17: croco
+  18: drake
+  19: evil_eye
+  20: cold_eye
+  21: jr_wraith
+  22: wooden_mask
+  23: lupin
+  24: rocky_mask
+  25: crab
+path: E:\SecretWeapon\dataset
+train: images/train
+val: images/val

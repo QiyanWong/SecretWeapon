@@ -1,0 +1,25 @@
+{
+  "normal_atk_key": "c",
+  "normal_atk_range": 218,
+  "normal_atk_interval": 0.3,
+  "aoe_skill_key": "D",
+  "aoe_skill_range": 200,
+  "aoe_skill_interval": 0.44999999999999996,
+  "aoe_monster_count": 7,
+  "attack_range_y": 30,
+  "aoe_dir_mode": "单向 (单侧面朝方向)",
+  "monster_agro_dist": 400,
+  "jump_key": "V",
+  "buffs": [
+    {
+      "key": "h",
+      "cooldown": 110,
+      "checked": true
+    },
+    {
+      "key": "1",
+      "cooldown": 460,
+      "checked": true
+    }
+  ]
+}

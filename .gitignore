@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Training runs & checkpoints
+runs/
+*.pt
+
+# Debug and temporary directories
+dataset/debug_snapshots/
+dataset/synthetic_debug/
+scratch/
+.system_generated/
+
+# Large installers and compressed archives
+*.zip
+*.exe
+!WzComparerR2/
+
+# OS and Editor files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

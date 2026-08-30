@@ -1,0 +1,30 @@
+{
+  "version": "1.1",
+  "total_nodes": 2,
+  "nodes": [
+    {
+      "node_id": 1,
+      "x": 50,
+      "y": 37,
+      "x2": 50,
+      "y2": 37,
+      "action_type": "WALK",
+      "label": "N1_WALK"
+    },
+    {
+      "node_id": 2,
+      "x": 83,
+      "y": 37,
+      "x2": 83,
+      "y2": 37,
+      "action_type": "WALK",
+      "label": "N2_WALK"
+    }
+  ],
+  "minimap_crop": {
+    "left": 23,
+    "top": 157,
+    "width": 357,
+    "height": 114
+  }
+}
