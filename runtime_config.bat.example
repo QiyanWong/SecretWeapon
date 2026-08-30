@@ -1,0 +1,9 @@
+:: ====================================================================
+:: SecretWeapon Runtime Configuration Template
+:: Copy this file to "runtime_config.bat" to customize your local setup.
+:: "runtime_config.bat" is ignored by git and will never be overwritten.
+:: ====================================================================
+
+:: [Optional] Specify your custom Python executable path if needed:
+:: set "PYTHON_EXE=C:\Python310\python.exe"
+:: set "PYTHON_EXE=D:\conda\envs\yolo\python.exe"

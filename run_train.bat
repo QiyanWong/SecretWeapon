@@ -2,6 +2,8 @@
 cd /d "%~dp0"
 chcp 65001 > NUL
 
+if exist "%~dp0runtime_config.bat" call "%~dp0runtime_config.bat"
+
 set "PYTHON_EXE="
 if exist "%~dp0.venv\Scripts\python.exe" set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
 if "%PYTHON_EXE%"=="" if exist "%~dp0venv\Scripts\python.exe" set "PYTHON_EXE=%~dp0venv\Scripts\python.exe"

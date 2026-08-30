@@ -2,6 +2,9 @@
 cd /d "%~dp0"
 chcp 65001 > NUL
 
+:: Load user-specific runtime config if present
+if exist "%~dp0runtime_config.bat" call "%~dp0runtime_config.bat"
+
 :: Check for Administrator privileges
 >nul 2>&1 "%SYSTEMROOT%\system32\cacls.exe" "%SYSTEMROOT%\system32\config\system"
 if '%errorlevel%' NEQ '0' (
@@ -14,9 +17,8 @@ if '%errorlevel%' NEQ '0' (
     exit /B
 )
 
-:: Intelligent Python discovery
-set "PYTHON_EXE="
-if exist "%~dp0.venv\Scripts\python.exe" set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
+:: Intelligent Python discovery if not explicitly set
+if "%PYTHON_EXE%"=="" if exist "%~dp0.venv\Scripts\python.exe" set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
 if "%PYTHON_EXE%"=="" if exist "%~dp0venv\Scripts\python.exe" set "PYTHON_EXE=%~dp0venv\Scripts\python.exe"
 if "%PYTHON_EXE%"=="" if exist "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" set "PYTHON_EXE=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 if "%PYTHON_EXE%"=="" (
@@ -31,7 +33,8 @@ if "%PYTHON_EXE%"=="" (
 if "%PYTHON_EXE%"=="" (
     echo =======================================================
     echo [ERROR] Python not found!
-    echo Please make sure Python 3.10+ is installed and on PATH.
+    echo Please make sure Python 3.10+ is installed and on PATH,
+    echo or specify PYTHON_EXE in runtime_config.bat.
     echo =======================================================
     pause
     exit /B 1

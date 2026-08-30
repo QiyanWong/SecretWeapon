@@ -65,9 +65,16 @@ cd SecretWeapon
 pip install -r requirements.txt
 ```
 
-### 2. Launch Main Console
+### 2. (Optional) Custom Runtime Configuration
 
-Simply double-click:
+If you use a non-default Python interpreter (e.g., Conda environment or custom path):
+- Copy `runtime_config.bat.example` to `runtime_config.bat` and set `set "PYTHON_EXE=..."`.
+- Copy `runtime_config.json.example` to `runtime_config.json` to configure local runtime parameters.
+- `runtime_config.*` is ignored by git and will never affect other contributors.
+
+### 3. Launch Main Console
+
+Simply right-click and Run as Administrator:
 ```bash
 run_detector.bat
 ```

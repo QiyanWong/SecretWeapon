@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy this file to runtime_config.json to customize your local runtime settings. runtime_config.json is ignored by git.",
+  "custom_python_path": "",
+  "custom_model_path": "best.pt",
+  "default_xml_map_dir": "map",
+  "debug_mode": false
+}

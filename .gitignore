@@ -17,6 +17,10 @@ dataset/synthetic_debug/
 scratch/
 .system_generated/
 
+# Local runtime configuration (user-specific)
+runtime_config.bat
+runtime_config.json
+
 # Large installers, archives, and external tools
 *.zip
 *.exe
