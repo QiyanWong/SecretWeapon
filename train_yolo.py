@@ -115,7 +115,7 @@ def create_data_yaml(classes=CLASS_NAMES):
     print(f"类别定义: {data_config['names']}")
 
 
-def run_training(epochs=50, imgsz=640, batch=16):
+def run_training(epochs=50, imgsz=800, batch=16):
     """使用 Ultralytics YOLOv8 开始训练"""
     print("=" * 60)
     print("开始初始化 YOLOv8 Nano 模型训练...")
@@ -123,13 +123,14 @@ def run_training(epochs=50, imgsz=640, batch=16):
     # 加载预训练模型 weights (首次运行会自动从 GitHub 下载 yolov8n.pt)
     model = YOLO('yolov8n.pt')
 
-    # 开始训练
+    # 开始训练 (为 2D 横版游戏禁用旋转 degrees=0.0，增强小目标与扁平怪物特征)
     results = model.train(
         data=YAML_PATH,
         epochs=epochs,
         imgsz=imgsz,
         batch=batch,
         workers=2,
+        degrees=0.0,
         name='maple_yolo_run',
         project=os.path.join(BASE_DIR, 'runs', 'detect')
     )

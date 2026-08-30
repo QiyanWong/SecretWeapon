@@ -134,11 +134,11 @@ def convert_all_jsons():
 
                 yolo_lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {nw:.6f} {nh:.6f}")
 
-            # 写入对应的 .txt 文件
-            if yolo_lines:
-                with open(txt_path, 'w', encoding='utf-8') as f_txt:
+            # 写入对应的 .txt 文件 (无标注目标则保留为 0KB 空文件)
+            with open(txt_path, 'w', encoding='utf-8') as f_txt:
+                if yolo_lines:
                     f_txt.write("\n".join(yolo_lines) + "\n")
-                converted_count += 1
+            converted_count += 1
 
         except Exception as e:
             print(f"处理 {jf} 异常: {e}")
