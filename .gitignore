@@ -5,7 +5,6 @@ __pycache__/
 
 # Training runs & checkpoints
 runs/
-*.pt
 
 # Dataset generated and local training data
 dataset/images/
