@@ -606,7 +606,7 @@ class DetectorApp(QMainWindow):
         h_range_mode.addWidget(QLabel("判定高度(Y):"))
         self.sp_attack_range_y = QSpinBox()
         self.sp_attack_range_y.setRange(10, 500)
-        self.sp_attack_range_y.setValue(70)
+        self.sp_attack_range_y.setValue(120)
         self.sp_attack_range_y.setFixedWidth(50)
         h_range_mode.addWidget(self.sp_attack_range_y)
 
@@ -630,7 +630,7 @@ class DetectorApp(QMainWindow):
         h_agro_jump.addWidget(QLabel("寻怪范围(X):"))
         self.sp_agro_dist = QSpinBox()
         self.sp_agro_dist.setRange(50, 2000)
-        self.sp_agro_dist.setValue(400)
+        self.sp_agro_dist.setValue(500)
         h_agro_jump.addWidget(self.sp_agro_dist)
 
         h_agro_jump.addWidget(QLabel("跳跃按键:"))
@@ -1025,7 +1025,8 @@ class DetectorApp(QMainWindow):
             "txt_key": txt_key,
             "sp_cd": sp_cd,
             "lbl_status": lbl_status,
-            "last_press": 0.0
+            "last_press": 0.0,
+            "target_cd": float(sp_cd.value())
         }
 
         # 一勾选立刻按下按键并开始倒计时
@@ -1033,10 +1034,15 @@ class DetectorApp(QMainWindow):
             if state == 2:  # Checked
                 key = txt_key.text().strip()
                 if key and self.game_controller:
-                    self.game_controller.tap_key(key, 0.1)
+                    self.game_controller.tap_key(key)
                 item_dict["last_press"] = time.time()
-                lbl_status.setText(f"倒计时: {sp_cd.value()}s")
-                self.log(f"【Buff 技能】勾选开启 Buff [{key}]！已立刻按键，并开启 {sp_cd.value()}s 倒计时")
+                base_cd = float(sp_cd.value())
+                if hasattr(self.game_controller, 'jitter') and self.game_controller.jitter:
+                    item_dict["target_cd"] = self.game_controller.jitter.calc_floating_interval(base_cd, ratio=0.10)
+                else:
+                    item_dict["target_cd"] = base_cd
+                lbl_status.setText(f"倒计时: {int(item_dict['target_cd'])}s")
+                self.log(f"【Buff 技能】勾选开启 Buff [{key}]！已立刻按键，并开启拟人化动态倒计时 (目标 ~{item_dict['target_cd']:.1f}s)")
             else:
                 lbl_status.setText("状态: 已禁用")
                 self.log(f"【Buff 技能】已禁用 Buff [{txt_key.text().strip()}]")
@@ -1425,10 +1431,10 @@ class DetectorApp(QMainWindow):
                         center_y = (y1 + y2) // 2
                         detections.append(f"{class_name}@({center_x},{center_y})[{conf:.2f}]")
                         
-                        # 分类角色状态与怪物
+                        # 分类角色状态与怪物 (传递完整包围盒坐标支持双重底部/中心对齐)
                         if class_name in ["player_left", "player_right", "player_climb"]:
-                            screen_player_pos = (center_x, center_y)
-                            self.last_screen_player_pos = (center_x, center_y)
+                            screen_player_pos = (center_x, center_y, x1, y1, x2, y2)
+                            self.last_screen_player_pos = (center_x, center_y, x1, y1, x2, y2)
                             if class_name == "player_climb":
                                 player_state = "climb"
                             elif class_name == "player_left":
@@ -1438,7 +1444,7 @@ class DetectorApp(QMainWindow):
                         else:
                             # 其他默认认为是怪物 (排除 rope 和 portal)
                             if class_name not in ["rope", "portal"]:
-                                screen_monsters.append((center_x, center_y))
+                                screen_monsters.append((center_x, center_y, x1, y1, x2, y2))
 
                         if self.is_monitoring_preview:
                             color = self.colors[cls_id % len(self.colors)]
@@ -1450,20 +1456,26 @@ class DetectorApp(QMainWindow):
                             cv2.rectangle(game_frame, (x1, y1 - th - 6), (x1 + tw, y1), color, -1)
                             cv2.putText(game_frame, label_str, (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
 
-        # 4. 持续 Buff 技能倒计时检查与自动施放
+        # 4. 持续 Buff 技能倒计时检查与自动施放 (拟人化 ±10% 动态浮动)
         now_time = time.time()
         for item in self.buff_items:
             if item["chk"].isChecked():
                 elapsed = now_time - item["last_press"]
-                cd = item["sp_cd"].value()
-                remaining = max(0, int(cd - elapsed))
+                base_cd = float(item["sp_cd"].value())
+                target_cd = item.get("target_cd", base_cd)
+                remaining = max(0, int(target_cd - elapsed))
                 item["lbl_status"].setText(f"倒计时: {remaining}s")
-                if elapsed >= cd:
+                if elapsed >= target_cd:
                     key = item["txt_key"].text().strip()
                     if key and self.game_controller:
-                        self.game_controller.tap_key(key, 0.1)
+                        self.game_controller.tap_key(key)
                     item["last_press"] = now_time
-                    self.log(f"【Buff 技能定时】自动重发 Buff 技能 [{key}] (间隔 {cd}s)")
+                    # 重新生成下一次独立浮动的目标时长 (±10%)
+                    if hasattr(self.game_controller, 'jitter') and self.game_controller.jitter:
+                        item["target_cd"] = self.game_controller.jitter.calc_floating_interval(base_cd, ratio=0.10)
+                    else:
+                        item["target_cd"] = base_cd
+                    self.log(f"【Buff 技能定时】自动重发 Buff 技能 [{key}] (本次间隔 {elapsed:.1f}s / 下次目标 {item['target_cd']:.1f}s)")
 
         # 5. 执行自动打怪决策核心
         if self.is_bot_running:
@@ -1478,20 +1490,24 @@ class DetectorApp(QMainWindow):
             # 节流 1.5 秒打印一次群攻范围怪数量诊断 Log
             if now_time - self.last_aoe_log_time >= 1.5:
                 self.last_aoe_log_time = now_time
-                px, py = screen_player_pos
+                px, py = screen_player_pos[0], screen_player_pos[1]
+                p_bottom = screen_player_pos[5] if len(screen_player_pos) >= 6 else (py + 30)
                 aoe_range = self.sp_aoe_range.value()
                 aoe_count_thresh = self.sp_aoe_count.value()
                 atk_range_y = self.sp_attack_range_y.value()
                 is_single = ("单向" in self.cb_aoe_dir_mode.currentText())
                 
-                same_level = [m for m in screen_monsters if abs(m[1] - py) <= atk_range_y]
+                same_level = [
+                    m for m in screen_monsters 
+                    if min(abs(m[1] - py), abs((m[5] if len(m) >= 6 else m[1]) - p_bottom)) <= atk_range_y
+                ]
                 if is_single:
                     r_c = sum(1 for m in same_level if 0 <= (m[0] - px) <= aoe_range)
                     l_c = sum(1 for m in same_level if 0 <= (px - m[0]) <= aoe_range)
-                    self.log(f"【群攻范围诊断(单向)】画面总怪: {len(screen_monsters)} | 同平台(Y差<={atk_range_y}px)怪数: {len(same_level)} | 右侧怪数: {r_c}, 左侧怪数: {l_c} (门槛: >= {aoe_count_thresh})")
+                    self.log(f"【群攻范围诊断(单向)】画面总怪: {len(screen_monsters)} | 同平台(Y容差<={atk_range_y}px)怪数: {len(same_level)} | 右侧怪数: {r_c}, 左侧怪数: {l_c} (门槛: >= {aoe_count_thresh})")
                 else:
                     in_aoe_range = [m for m in same_level if abs(m[0] - px) <= aoe_range]
-                    self.log(f"【群攻范围诊断(双向)】画面总怪: {len(screen_monsters)} | 同平台(Y差<={atk_range_y}px)怪数: {len(same_level)} | 群攻范围(X<={aoe_range}px)怪数: {len(in_aoe_range)} (门槛: >= {aoe_count_thresh})")
+                    self.log(f"【群攻范围诊断(双向)】画面总怪: {len(screen_monsters)} | 同平台(Y容差<={atk_range_y}px)怪数: {len(same_level)} | 群攻范围(X<={aoe_range}px)怪数: {len(in_aoe_range)} (门槛: >= {aoe_count_thresh})")
 
             # 获取用户设置的攻击与技能配置
             current_config = {

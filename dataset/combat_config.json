@@ -3,12 +3,13 @@
   "normal_atk_range": 218,
   "normal_atk_interval": 0.3,
   "aoe_skill_key": "D",
-  "aoe_skill_range": 200,
-  "aoe_skill_interval": 0.44999999999999996,
-  "aoe_monster_count": 7,
-  "attack_range_y": 30,
+  "aoe_skill_range": 250,
+  "aoe_skill_interval": 0.45,
+  "aoe_monster_count": 3,
+  "attack_range_y": 100,
+  "state_switch_interval": 0.5,
   "aoe_dir_mode": "单向 (单侧面朝方向)",
-  "monster_agro_dist": 400,
+  "monster_agro_dist": 500,
   "jump_key": "V",
   "buffs": [
     {
