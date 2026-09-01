@@ -39,6 +39,7 @@ from PyQt5.QtGui import QPixmap, QImage, QFont, QPainter, QPen, QColor
 from minimap_tracker import MinimapTracker, RouteManager, PathNode, DEFAULT_ROUTE_PATH, DEFAULT_MINIMAP_CONFIG_PATH, ROUTES_DIR
 from game_controller import GameController
 from decision_engine import DecisionEngine
+from captcha_detector import CaptchaAlertDetector
 from auto_buff_manager import AutoBuffManager
 
 # 项目基础路径
@@ -210,9 +211,11 @@ class DetectorApp(QMainWindow):
         # 全局快捷键 F1/F2/F3 (录制) / F9 (停止打怪) 状态记录
         self.hotkey_states = {0x70: False, 0x71: False, 0x72: False, 0x78: False}
 
-        # 3. 初始化控制与决策系统
+        # 初始化底层驱动与决策引擎
         self.game_controller = GameController()
         self.decision_engine = DecisionEngine(self.game_controller, self.route_manager)
+        self.captcha_detector = CaptchaAlertDetector()
+        self.last_captcha_log_time = 0.0
         self.auto_buff_manager = AutoBuffManager(self.game_controller)
 
         # 4. 加载 YOLO 权重
@@ -640,7 +643,15 @@ class DetectorApp(QMainWindow):
         h_agro_jump.addWidget(self.cb_key_jump)
         strat_layout.addLayout(h_agro_jump)
 
-        # 4. 持续 Buff 技能动态列表
+        # 5. 测谎/符文图形验证弹窗自动识别报警行
+        h_captcha = QHBoxLayout()
+        self.chk_captcha_alert = QCheckBox("🚨 开启测谎/符文图形验证弹窗自动警报")
+        self.chk_captcha_alert.setChecked(True)
+        self.chk_captcha_alert.setStyleSheet("color: #FF5252; font-weight: bold;")
+        h_captcha.addWidget(self.chk_captcha_alert)
+        strat_layout.addLayout(h_captcha)
+
+        # 6. 持续 Buff 技能动态列表
         h_buff_header = QHBoxLayout()
         h_buff_header.addWidget(QLabel("<b>✨ 持续 Buff 技能 (勾选立刻触发)</b>"))
 
@@ -1407,6 +1418,33 @@ class DetectorApp(QMainWindow):
             self.lbl_minimap_display.img_offset_y = (self.lbl_minimap_display.height() - m_sh) // 2
             
             self.lbl_minimap_display.setPixmap(scaled_m_pixmap)
+
+        # 2.5 测谎仪 / 符文图形验证弹窗毫秒级检测 (最高优先级安全拦截)
+        is_captcha = False
+        if hasattr(self, 'captcha_detector') and self.chk_captcha_alert.isChecked():
+            is_captcha, captcha_boxes = self.captcha_detector.detect(game_frame)
+            if is_captcha:
+                # 紧急制动：释放所有按键并重置决策引擎
+                if self.game_controller:
+                    self.game_controller.release_all_keys()
+                if self.decision_engine:
+                    self.decision_engine.reset()
+
+                # 触发多频急促警报音效
+                self.captcha_detector.trigger_alarm()
+
+                # 限流 2.0s 打印高危警告日志
+                now_time = time.time()
+                if now_time - getattr(self, 'last_captcha_log_time', 0.0) > 2.0:
+                    self.last_captcha_log_time = now_time
+                    self.log("🚨【最高危警报】检测到测谎/符文图形验证弹窗！已紧急制动按键，请立即手动接管！")
+
+                # 在监控画面中绘制高亮红色警报边框与文字
+                if self.is_monitoring_preview:
+                    for (cx, cy, cw, ch, score) in captcha_boxes:
+                        cv2.rectangle(game_frame, (cx, cy), (cx + cw, cy + ch), (0, 0, 255), 3)
+                        cv2.putText(game_frame, f"CAPTCHA ALERT [{score:.2f}]", (cx, max(20, cy - 8)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
         # 3. YOLO 目标识别与决策输入准备
         conf_thresh = self.slider_conf.value() / 100.0

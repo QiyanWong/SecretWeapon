@@ -6,7 +6,7 @@
   "aoe_skill_range": 250,
   "aoe_skill_interval": 0.45,
   "aoe_monster_count": 3,
-  "attack_range_y": 100,
+  "attack_range_y": 131,
   "state_switch_interval": 0.5,
   "aoe_dir_mode": "单向 (单侧面朝方向)",
   "monster_agro_dist": 500,
