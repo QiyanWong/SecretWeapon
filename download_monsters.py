@@ -35,7 +35,8 @@ MOB_MAPPING = {
     'wooden_mask':     {'id': 2230110, 'cn': '木面怪人', 'en': 'Wooden Mask'},
     'lupin':           {'id': 3210800, 'cn': '猴子/鲁胖', 'en': 'Lupin'},
     'rocky_mask':      {'id': 2230111, 'cn': '石面怪人', 'en': 'Rocky Mask'},
-    'crab':            {'id': 3230102, 'cn': '红螃蟹/罗朗', 'en': 'Lorang'}
+    'crab':            {'id': 3230102, 'cn': '红螃蟹/罗朗', 'en': 'Lorang'},
+    'tauromacis':      {'id': 5130100, 'cn': '月牙牛魔王', 'en': 'Tauromacis'}
 }
 
 # 仅下载存活及战斗相关的动态帧 (排除死亡消散 die 动作，防止模型误将尸体当做存活目标)

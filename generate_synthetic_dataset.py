@@ -25,7 +25,7 @@ DEBUG_OUTPUT_DIR = os.path.join(BASE_DIR, "dataset", "synthetic_debug")
 os.makedirs(RAW_OUTPUT_DIR, exist_ok=True)
 os.makedirs(DEBUG_OUTPUT_DIR, exist_ok=True)
 
-# 23 类别定义 (2 玩家朝向 + 21 活体怪物)
+# 24 类别定义 (2 玩家朝向 + 22 活体怪物)
 CLASS_LIST = [
     'player_left',
     'player_right',
@@ -49,7 +49,8 @@ CLASS_LIST = [
     'wooden_mask',
     'lupin',
     'rocky_mask',
-    'crab'
+    'crab',
+    'tauromacis'
 ]
 CLASS_TO_ID = {name: i for i, name in enumerate(CLASS_LIST)}
 MONSTER_CLASSES = CLASS_LIST[2:]
