@@ -14,6 +14,8 @@ LABEL_MAPPING = {
     # 玩家状态与地图要素
     '我左': 'player_left',
     '我右': 'player_right',
+    'player_left': 'player_left',
+    'player_right': 'player_right',
     '我爬': 'player_climb',
     '绳子': 'rope',
     '光圈': 'portal',
@@ -29,22 +31,34 @@ LABEL_MAPPING = {
     '野猪': 'wild_boar',
     'wild_roar': 'wild_boar',
     '猪猪': 'pig',
+    '肥肥': 'pig',
     '飘飘猪': 'ribbon_pig',
     '火野猪': 'fire_boar',
     'fire_roar': 'fire_boar',
     '小青蛇': 'jr_necki',
     '鳄鱼': 'croco',
+    '沼泽青鳄': 'croco',
     '土龙': 'drake',
+    '青龙': 'drake',
+    '绿龙': 'drake',
+    '黄土龙': 'drake',
     '风独眼': 'evil_eye',
+    '风独眼兽': 'evil_eye',
     '冰独眼': 'cold_eye',
+    '冰独眼兽': 'cold_eye',
     '小幽灵': 'jr_wraith',
     '木面怪人': 'wooden_mask',
     '猴子': 'lupin',
+    '鲁胖': 'lupin',
     '石面怪人': 'rocky_mask',
-    '红螃蟹': 'crab'
+    '红螃蟹': 'crab',
+    '罗朗': 'crab',
+    '月牙牛魔王': 'tauromacis',
+    '牛魔王': 'tauromacis',
+    '独角牛魔王': 'tauromacis'
 }
 
-# 保持固定的类别顺序 (23 类)
+# 保持固定的类别顺序 (24 类: 2 种玩家朝向 + 22 种怪物)
 CLASS_LIST = [
     'player_left',
     'player_right',
@@ -68,7 +82,8 @@ CLASS_LIST = [
     'wooden_mask',
     'lupin',
     'rocky_mask',
-    'crab'
+    'crab',
+    'tauromacis'
 ]
 
 CLASS_TO_ID = {name: idx for idx, name in enumerate(CLASS_LIST)}
