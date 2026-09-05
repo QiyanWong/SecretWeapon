@@ -128,13 +128,14 @@ class DecisionEngine:
             for o in self.map_parser.horizontal_fhs:
                 if o.id in visited:
                     continue
-                # 检查连续相接 (端点横向贴合 <= 15px, 纵向落差 <= 20px)
-                if (abs(o.x2 - f.x1) <= 15 and abs(o.y2 - f.y1) <= 20) or \
-                   (abs(o.x1 - f.x2) <= 15 and abs(o.y1 - f.y2) <= 20):
+                # 检查连续相接 (端点横向贴合 <= 20px, 纵向落差 <= 35px，适配微落差阶梯平台)
+                if (abs(o.x2 - f.x1) <= 20 and abs(o.y2 - f.y1) <= 35) or \
+                   (abs(o.x1 - f.x2) <= 20 and abs(o.y1 - f.y2) <= 35):
                     visited.add(o.id)
                     queue.append(o)
                     connected.append(o)
                     
+        self.current_platform_fhs = connected
         x_min = min(min(f.x1, f.x2) for f in connected)
         x_max = max(max(f.x1, f.x2) for f in connected)
         total_w = x_max - x_min
@@ -176,6 +177,7 @@ class DecisionEngine:
 
         # 🌟 平台打怪模式：最高优先级危险区防掉落避险拦截
         enable_platform_patrol = config.get("enable_platform_patrol", False)
+        self.enable_platform_patrol = enable_platform_patrol
         crop_w = config.get("crop_w", None)
         crop_h = config.get("crop_h", None)
         danger_margin = config.get("danger_margin", 150)
@@ -188,6 +190,7 @@ class DecisionEngine:
             if p_info:
                 curr_fh, x_min, x_max, safe_left, safe_right, x_mid = p_info
                 self.current_platform_bounds = p_info
+                self.last_platform_bounds_time = now
                 
                 # (1) 落入左侧危险区 (X < safe_left): 强制向右回撤中点，并同步巡逻方向为向右
                 if curr_xw < safe_left:
@@ -229,10 +232,14 @@ class DecisionEngine:
                 else:
                     self.is_escaping_platform_danger = False
             else:
-                self.current_platform_bounds = None
+                # 跳跃等短暂浮空缓冲保护 (0.6s 内不抹除平台边界，防止 HUD 频繁闪烁)
+                if now - getattr(self, "last_platform_bounds_time", 0) > 0.6:
+                    self.current_platform_bounds = None
+                    self.current_platform_fhs = []
                 self.is_escaping_platform_danger = False
         else:
             self.current_platform_bounds = None
+            self.current_platform_fhs = []
             self.is_escaping_platform_danger = False
 
         # 1. 查找屏幕内符合攻击距离与群攻门槛的怪物
@@ -558,6 +565,11 @@ class DecisionEngine:
         
         p_info = self.get_platform_info(curr_xw, curr_yw, danger_margin=danger_margin)
         if not p_info:
+            p_info = self.current_platform_bounds
+        if not p_info:
+            if now - getattr(self, "last_platform_missing_log_time", 0) >= 2.0:
+                self.last_platform_missing_log_time = now
+                print(f"⚠️ [平台巡逻] 当前世界坐标 ({curr_xw:.0f}, {curr_yw:.0f}) 未能匹配到平台 Foothold，暂停移动等待吸附")
             self.gc.clear_movement()
             return
             

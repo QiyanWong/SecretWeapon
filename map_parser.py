@@ -2,6 +2,9 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 import math
+import base64
+import cv2
+import numpy as np
 
 # 修复控制台 UTF-8 输出
 if hasattr(sys.stdout, 'reconfigure'):
@@ -75,9 +78,16 @@ class MapParser:
         self.ladder_ropes = []   # [LadderRope, ...]
         self.portals = []        # 传送门列表
         
-        # 小地图校准参数
+        # 小地图校准与对齐微调参数
         self.canvas_w = 0        # 小地图真实图像像素宽 (如 259)
         self.canvas_h = 0        # 小地图真实图像像素高 (如 79)
+        self.canvas_img = None   # 解码后的完整小地图 BGRA 图像
+        self.canvas_bgr = None   # 转换为 BGR (黑色透明背景) 的完整小地图图像
+        self.canvas_gray = None  # 灰度图像，用于快速模板匹配视窗偏移
+        self.scroll_y = 0        # 纵向滚动地图视窗偏移量 (px)
+        self.last_valid_scroll_y = 0
+        self.offset_x = 0        # 用户手动调整的 X 偏移对齐量 (px)
+        self.offset_y = 0        # 用户手动调整的 Y 偏移对齐量 (px)
         self.center_x = 0
         self.center_y = 0
         self.mm_width = 0
@@ -107,6 +117,11 @@ class MapParser:
         self.horizontal_fhs.clear()
         self.ladder_ropes.clear()
         self.portals.clear()
+        self.canvas_img = None
+        self.canvas_bgr = None
+        self.canvas_gray = None
+        self.scroll_y = 0
+        self.last_valid_scroll_y = 0
 
         tree = ET.parse(xml_path)
         root = tree.getroot()
@@ -125,7 +140,7 @@ class MapParser:
             self.vr_top = int(self._get_val(info_dir, "VRTop") or -9999)
             self.vr_bottom = int(self._get_val(info_dir, "VRBottom") or 9999)
 
-        # 2. 解析 miniMap 节点 (小地图线性映射参数及真实 canvas 像素尺寸)
+        # 2. 解析 miniMap 节点 (小地图线性映射参数、真实 canvas 尺寸及底图图像)
         mm_dir = None
         for d in root:
             if d.attrib.get('name') == 'miniMap':
@@ -141,6 +156,21 @@ class MapParser:
             if canvas is not None:
                 self.canvas_w = int(canvas.attrib.get('width', 0))
                 self.canvas_h = int(canvas.attrib.get('height', 0))
+                if 'value' in canvas.attrib:
+                    try:
+                        raw_bytes = base64.b64decode(canvas.attrib['value'])
+                        nparr = np.frombuffer(raw_bytes, np.uint8)
+                        bgra = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+                        if bgra is not None:
+                            self.canvas_img = bgra
+                            if len(bgra.shape) == 3 and bgra.shape[2] == 4:
+                                b, g, r, a = cv2.split(bgra)
+                                self.canvas_bgr = np.where(a[..., None] == 0, [0, 0, 0], bgra[..., :3]).astype(np.uint8)
+                            else:
+                                self.canvas_bgr = bgra.copy()
+                            self.canvas_gray = cv2.cvtColor(self.canvas_bgr, cv2.COLOR_BGR2GRAY)
+                    except Exception as e:
+                        print(f"⚠️ 解码 miniMap canvas 图像异常: {e}")
             else:
                 self.canvas_w = 0
                 self.canvas_h = 0
@@ -229,18 +259,28 @@ class MapParser:
             lr.bottom_foothold = best_bot_fh
             lr.top_foothold = best_top_fh
 
+    def set_overlay_offset(self, offset_x, offset_y):
+        """设置小地图 Overlay 手动对齐微调偏移量 (像素)"""
+        self.offset_x = int(offset_x)
+        self.offset_y = int(offset_y)
+
     def minimap_to_world(self, x_mm, y_mm, crop_w=None, crop_h=None):
         """
         将屏幕小地图像素坐标转换为游戏世界绝对坐标
-        支持自动根据实际框选尺寸 (crop_w, crop_h) 与 XML 基础 canvas 尺寸进行等比自适应拉伸校准
-        官方 WZ 映射公式: X_world = (x_mm / ratio_x) * (2^mag) - centerX
+        支持自动根据实际框选尺寸 (crop_w, crop_h) 与 XML 基础 canvas 尺寸进行缩放对齐，
+        并消除用户手动微调的对齐偏移量 (offset_x, offset_y)
+        映射公式:
+        raw_x = (x_mm - offset_x) / rx
+        raw_y = (y_mm - offset_y) / ry
+        X_world = raw_x * (2^mag) - centerX
+        Y_world = raw_y * (2^mag) - centerY
         """
         scale = float(2 ** self.mag) # 默认为 16
         rx = (float(crop_w) / float(self.canvas_w)) if (crop_w and self.canvas_w > 0) else 1.0
         ry = (float(crop_h) / float(self.canvas_h)) if (crop_h and self.canvas_h > 0) else 1.0
 
-        raw_x_mm = float(x_mm) / rx if rx > 0 else float(x_mm)
-        raw_y_mm = float(y_mm) / ry if ry > 0 else float(y_mm)
+        raw_x_mm = (float(x_mm) - float(self.offset_x)) / rx if rx > 0 else (float(x_mm) - float(self.offset_x))
+        raw_y_mm = (float(y_mm) - float(self.offset_y)) / ry if ry > 0 else (float(y_mm) - float(self.offset_y))
 
         x_world = (raw_x_mm * scale) - float(self.center_x)
         y_world = (raw_y_mm * scale) - float(self.center_y)
@@ -249,8 +289,13 @@ class MapParser:
     def world_to_minimap(self, x_world, y_world, crop_w=None, crop_h=None):
         """
         将游戏世界绝对坐标转换为屏幕小地图显示像素坐标
-        支持自动自适应拉伸匹配屏幕实际小地图视窗
-        官方 WZ 映射公式: x_mm = ((X_world + centerX) / (2^mag)) * ratio_x
+        支持自动根据实际框选尺寸 (crop_w, crop_h) 与 XML 基础 canvas 尺寸进行缩放对齐，
+        并叠加用户手动微调的对齐偏移量 (offset_x, offset_y)
+        映射公式:
+        raw_x = (X_world + centerX) / (2^mag)
+        raw_y = (Y_world + centerY) / (2^mag)
+        x_mm = raw_x * rx + offset_x
+        y_mm = raw_y * ry + offset_y
         """
         scale = float(2 ** self.mag) # 默认为 16
         rx = (float(crop_w) / float(self.canvas_w)) if (crop_w and self.canvas_w > 0) else 1.0
@@ -259,8 +304,8 @@ class MapParser:
         raw_x_mm = (float(x_world) + float(self.center_x)) / scale
         raw_y_mm = (float(y_world) + float(self.center_y)) / scale
 
-        disp_x = raw_x_mm * rx
-        disp_y = raw_y_mm * ry
+        disp_x = (raw_x_mm * rx) + float(self.offset_x)
+        disp_y = (raw_y_mm * ry) + float(self.offset_y)
         return int(round(disp_x)), int(round(disp_y))
 
     def snap_to_foothold(self, x_world, y_world, margin=45, margin_y=60):

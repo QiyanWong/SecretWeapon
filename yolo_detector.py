@@ -564,6 +564,36 @@ class DetectorApp(QMainWindow):
         h_map_select.addWidget(self.btn_refresh_maps, 1)
         map_nav_layout.addLayout(h_map_select)
 
+        # 🌟 Overlay 平台对齐微调控制栏 (支持手动像素级微调 X/Y 偏移以严丝合缝对齐小地图底图)
+        h_overlay_align = QHBoxLayout()
+        h_overlay_align.addWidget(QLabel("📐 Overlay平台对齐微调:"))
+        h_overlay_align.addWidget(QLabel("X偏移:"))
+        self.sp_overlay_offset_x = QSpinBox()
+        self.sp_overlay_offset_x.setRange(-500, 500)
+        self.sp_overlay_offset_x.setValue(getattr(self.minimap_tracker, "overlay_offset_x", 0))
+        self.sp_overlay_offset_x.setSuffix(" px")
+        self.sp_overlay_offset_x.setFixedWidth(75)
+        self.sp_overlay_offset_x.setToolTip("手动微调 XML 平台与小地图底图在水平方向的对齐偏移量 (正数向右，负数向左)")
+        self.sp_overlay_offset_x.valueChanged.connect(self.on_overlay_offset_changed)
+        h_overlay_align.addWidget(self.sp_overlay_offset_x)
+
+        h_overlay_align.addWidget(QLabel("Y偏移:"))
+        self.sp_overlay_offset_y = QSpinBox()
+        self.sp_overlay_offset_y.setRange(-500, 500)
+        self.sp_overlay_offset_y.setValue(getattr(self.minimap_tracker, "overlay_offset_y", 0))
+        self.sp_overlay_offset_y.setSuffix(" px")
+        self.sp_overlay_offset_y.setFixedWidth(75)
+        self.sp_overlay_offset_y.setToolTip("手动微调 XML 平台与小地图底图在垂直方向的对齐偏移量 (正数向下，负数向上)")
+        self.sp_overlay_offset_y.valueChanged.connect(self.on_overlay_offset_changed)
+        h_overlay_align.addWidget(self.sp_overlay_offset_y)
+
+        self.btn_reset_overlay = QPushButton("🔄 归零")
+        self.btn_reset_overlay.setFixedWidth(55)
+        self.btn_reset_overlay.setToolTip("重置 X/Y 对齐微调为 0")
+        self.btn_reset_overlay.clicked.connect(self.reset_overlay_offset)
+        h_overlay_align.addWidget(self.btn_reset_overlay)
+        map_nav_layout.addLayout(h_overlay_align)
+
         right_layout.addWidget(map_nav_group)
 
         # 右侧：战斗攻击与持续 Buff 技能配置组
@@ -987,6 +1017,7 @@ class DetectorApp(QMainWindow):
 
     def on_platform_mode_toggled(self, checked):
         """平台打怪模式切换"""
+        self.decision_engine.enable_platform_patrol = checked
         if checked:
             self.cb_map_xml.setEnabled(True)
             self.btn_refresh_maps.setEnabled(True)
@@ -999,6 +1030,8 @@ class DetectorApp(QMainWindow):
             else:
                 self.log("【提示】未找到有效的地图 XML，请先在 /map 文件夹中放入解包数据")
         else:
+            self.decision_engine.current_platform_bounds = None
+            self.decision_engine.current_platform_fhs = []
             if not self.chk_advanced_nav.isChecked():
                 self.cb_map_xml.setEnabled(False)
                 self.btn_refresh_maps.setEnabled(False)
@@ -1032,21 +1065,41 @@ class DetectorApp(QMainWindow):
                 self.log(f"【地图更新】已载入地图: {os.path.basename(xml_path)}，小地图平台已就绪")
 
     def _apply_map_canvas_size(self):
-        """根据当前地图 XML 的真实 canvas 尺寸自动设置小地图框选宽高"""
+        """根据当前地图 XML 的真实 canvas 尺寸自动设置小地图框选宽高与微调偏移"""
         if self.decision_engine.map_parser:
-            cw = self.decision_engine.map_parser.canvas_w
-            ch = self.decision_engine.map_parser.canvas_h
+            mp = self.decision_engine.map_parser
+            cw = mp.canvas_w
+            ch = mp.canvas_h
             if cw > 0 and ch > 0:
-                # 若为超高滚动地图 (如魔法密林树洞 ch > 100)，游戏界面的小地图框高度固定为标准视窗高 (~79px)
-                target_crop_h = min(ch, 79)
                 self.sp_crop_w.blockSignals(True)
                 self.sp_crop_h.blockSignals(True)
                 self.sp_crop_w.setValue(cw)
-                self.sp_crop_h.setValue(target_crop_h)
+                self.sp_crop_h.setValue(ch)
                 self.sp_crop_w.blockSignals(False)
                 self.sp_crop_h.blockSignals(False)
-                self.minimap_tracker.set_crop_box(self.sp_crop_x.value(), self.sp_crop_y.value(), cw, target_crop_h)
-                self.log(f"📐 【小地图尺寸自动对齐】已自动调整小地图框选为: {cw} x {target_crop_h} px (全景总高度: {ch}px)")
+                self.minimap_tracker.set_crop_box(self.sp_crop_x.value(), self.sp_crop_y.value(), cw, ch)
+
+            # 同步当前的 Overlay 微调偏移给 map_parser
+            if hasattr(self, "sp_overlay_offset_x") and hasattr(self, "sp_overlay_offset_y"):
+                mp.set_overlay_offset(self.sp_overlay_offset_x.value(), self.sp_overlay_offset_y.value())
+
+            self.log(f"📐 【小地图尺寸自动对齐】已自动调整小地图框选为: {cw} x {ch} px")
+
+    def on_overlay_offset_changed(self):
+        """当用户调整 X/Y 偏移量时实时更新 Overlay 平台对齐并保存"""
+        ox = self.sp_overlay_offset_x.value()
+        oy = self.sp_overlay_offset_y.value()
+        self.minimap_tracker.overlay_offset_x = ox
+        self.minimap_tracker.overlay_offset_y = oy
+        if self.decision_engine and self.decision_engine.map_parser:
+            self.decision_engine.map_parser.set_overlay_offset(ox, oy)
+        self.minimap_tracker.save_config()
+
+    def reset_overlay_offset(self):
+        """重置 Overlay 偏移对齐为 (0, 0)"""
+        self.sp_overlay_offset_x.setValue(0)
+        self.sp_overlay_offset_y.setValue(0)
+        self.log("📐 【Overlay微调】已重置平台对齐偏移量为 (0, 0)")
 
     def add_buff_item_row(self, key_text="1", cooldown_val=180, is_checked=False):
         """动态新增一行持续 Buff 配置"""
@@ -1415,7 +1468,13 @@ class DetectorApp(QMainWindow):
                     curr_target = self.route_manager.get_current_target_node()
                     next_target = self.route_manager.get_current_next_node()
                     seg_str = f" [当前段: P{curr_target.node_id}->P{next_target.node_id}]" if (curr_target and next_target and self.route_manager.nodes) else ""
-                    self.log(f"【小地图定位】玩家当前像素坐标: ({px}, {py}) | 置信度: {conf_score:.2f}{seg_str}")
+                    offset_info = ""
+                    if self.decision_engine and self.decision_engine.map_parser:
+                        ox = self.decision_engine.map_parser.offset_x
+                        oy = self.decision_engine.map_parser.offset_y
+                        if ox != 0 or oy != 0:
+                            offset_info = f" | 微调:({ox:+d},{oy:+d})"
+                    self.log(f"【小地图定位】玩家小地图坐标: ({px}, {py}){offset_info} | 置信度: {conf_score:.2f}{seg_str}")
                 else:
                     self.log(f"【小地图定位】未匹配到玩家图标 (最高得分: {conf_score:.2f} < 0.70)")
 
@@ -1431,18 +1490,30 @@ class DetectorApp(QMainWindow):
                     minimap_bgr, self.player_map_pos, self.route_manager, self.decision_engine
                 )
 
-                # 打印高级 A* 寻路状态诊断 Log (节流 1.5s)
-                if self.chk_advanced_nav.isChecked() and self.decision_engine.map_parser and self.player_map_pos:
+                # 打印高级 A* 寻路或平台打怪状态诊断 Log (节流 1.5s)
+                if (self.chk_advanced_nav.isChecked() or self.chk_platform_patrol.isChecked()) and self.decision_engine.map_parser and self.player_map_pos:
                     if now_time - self.last_pos_log_time >= 1.5:
                         px, py = self.player_map_pos
                         mp = self.decision_engine.map_parser
-                        xw, yw = mp.minimap_to_world(px, py)
+                        xw, yw = mp.minimap_to_world(px, py, crop_w=self.sp_crop_w.value(), crop_h=self.sp_crop_h.value())
                         cur_fh = mp.snap_to_foothold(xw, yw)
-                        active_path = self.decision_engine.active_path
-                        cur_idx = self.decision_engine.current_step_idx
-                        step_str = f"步骤: {cur_idx+1}/{len(active_path)} ({active_path[cur_idx].action} 目标X={active_path[cur_idx].target_x})" if (active_path and cur_idx < len(active_path)) else "无执行路径/等待规划"
                         fh_str = f"平台 #{cur_fh.id} (Y={cur_fh.get_y_at_x(xw):.0f})" if cur_fh else "未吸附到平台"
-                        self.log(f"【🌟 A* 寻路监控】世界绝对坐标: ({xw}, {yw}) | 所在: {fh_str} | {step_str}")
+                        
+                        if self.chk_platform_patrol.isChecked():
+                            pb = getattr(self.decision_engine, "current_platform_bounds", None)
+                            if not pb and cur_fh:
+                                pb = self.decision_engine.get_platform_info(xw, yw, danger_margin=self.sp_danger_margin.value())
+                            if pb:
+                                _, x_min, x_max, s_left, s_right, x_mid = pb
+                                esc_str = " | ⚠️ 正在避险回退中点" if getattr(self.decision_engine, "is_escaping_platform_danger", False) else ""
+                                self.log(f"【🛡️ 平台打怪监控】世界坐标: ({xw}, {yw}) | {fh_str} | 安全区: [{s_left:.0f} ~ {s_right:.0f}] (边距: {self.sp_danger_margin.value()}px){esc_str}")
+                            else:
+                                self.log(f"【🛡️ 平台打怪监控】世界坐标: ({xw}, {yw}) | {fh_str} | 等待吸附有效平台")
+                        else:
+                            active_path = self.decision_engine.active_path
+                            cur_idx = self.decision_engine.current_step_idx
+                            step_str = f"步骤: {cur_idx+1}/{len(active_path)} ({active_path[cur_idx].action} 目标X={active_path[cur_idx].target_x})" if (active_path and cur_idx < len(active_path)) else "无执行路径/等待规划"
+                            self.log(f"【🌟 A* 寻路监控】世界绝对坐标: ({xw}, {yw}) | 所在: {fh_str} | {step_str}")
 
             # 渲染到 lbl_minimap_display
             mh, mw, mch = dashboard_bgr.shape

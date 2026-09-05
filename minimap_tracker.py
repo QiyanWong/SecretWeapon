@@ -164,6 +164,8 @@ class MinimapTracker:
     """小地图定位与感知跟踪器 (支持模板匹配)"""
     def __init__(self, crop_box=(20, 146, 272, 170)):
         self.crop_left, self.crop_top, self.crop_w, self.crop_h = crop_box
+        self.overlay_offset_x = 0
+        self.overlay_offset_y = 0
         self.player_template = None
         self.last_mask_img = None
         self.last_player_pos = None
@@ -223,7 +225,9 @@ class MinimapTracker:
                 "crop_left": self.crop_left,
                 "crop_top": self.crop_top,
                 "crop_w": self.crop_w,
-                "crop_h": self.crop_h
+                "crop_h": self.crop_h,
+                "overlay_offset_x": getattr(self, "overlay_offset_x", 0),
+                "overlay_offset_y": getattr(self, "overlay_offset_y", 0)
             }
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
@@ -243,7 +247,9 @@ class MinimapTracker:
             self.crop_top = data.get("crop_top", self.crop_top)
             self.crop_w = data.get("crop_w", self.crop_w)
             self.crop_h = data.get("crop_h", self.crop_h)
-            print(f"【小地图配置已恢复】: Left={self.crop_left}, Top={self.crop_top}, W={self.crop_w}, H={self.crop_h}")
+            self.overlay_offset_x = data.get("overlay_offset_x", 0)
+            self.overlay_offset_y = data.get("overlay_offset_y", 0)
+            print(f"【小地图配置已恢复】: Left={self.crop_left}, Top={self.crop_top}, W={self.crop_w}, H={self.crop_h}, Offset=({self.overlay_offset_x}, {self.overlay_offset_y})")
             return True
         except Exception as e:
             print(f"读取小地图配置异常: {e}")
@@ -285,7 +291,7 @@ class MinimapTracker:
                 else:
                     res = cv2.matchTemplate(minimap_bgr, self.player_template, cv2.TM_CCOEFF_NORMED)
                     _, max_val, _, max_loc = cv2.minMaxLoc(res)
-                    if max_val >= 0.50:
+                    if max_val >= 0.65:
                         cx = max_loc[0] + tw // 2
                         cy = max_loc[1] + th // 2
                         self.last_player_pos = (cx, cy)
@@ -325,32 +331,16 @@ class MinimapTracker:
         canvas = minimap_bgr.copy()
         ch, cw, _ = canvas.shape
 
-        # ====================== 1. 高级 XML 拓扑与 A* 寻路决策渲染 ======================
+        # ====================== 1. 高级 XML 拓扑与 A* 寻路决策渲染 (统一直接 Overlay 模式) ======================
         if decision_engine and decision_engine.map_parser and getattr(decision_engine, "pathfinder", None):
             mp = decision_engine.map_parser
-            
-            # 判断是否属于超长/超高纵向滚动地图 (如魔法密林树洞 canvas_h > 120 且高度远大于视窗)
-            is_tall_map = (mp.canvas_h > 120 and mp.canvas_h > mp.canvas_w * 1.5)
-            
-            if is_tall_map:
-                # 🌟 全景上帝视角模式 (Panoramic God-View)：构建完整全景画布
-                pano_w = max(180, int(mp.canvas_w * 1.8))
-                pano_h = int(mp.canvas_h * (pano_w / float(mp.canvas_w)))
-                canvas = np.zeros((pano_h, pano_w, 3), dtype=np.uint8)
-                canvas[:] = (20, 24, 28) # 炫酷暗黑科技背景
-                
-                # 绘制全景微弱网格线
-                for gy in range(0, pano_h, 30):
-                    cv2.line(canvas, (0, gy), (pano_w, gy), (30, 36, 42), 1)
-                
-                cw, ch = pano_w, pano_h
 
             # (1) 绘制全图平台 (Footholds)
             for fh in mp.horizontal_fhs:
                 x1_m, y1_m = mp.world_to_minimap(fh.x1, fh.y1, crop_w=cw, crop_h=ch)
                 x2_m, y2_m = mp.world_to_minimap(fh.x2, fh.y2, crop_w=cw, crop_h=ch)
-                if 0 <= x1_m < cw or 0 <= x2_m < cw:
-                    cv2.line(canvas, (x1_m, y1_m), (x2_m, y2_m), (60, 180, 60), 2 if is_tall_map else 1, cv2.LINE_AA)
+                if 0 <= x1_m < cw or 0 <= x2_m < cw or min(x1_m, x2_m) <= cw // 2 <= max(x1_m, x2_m):
+                    cv2.line(canvas, (x1_m, y1_m), (x2_m, y2_m), (60, 180, 60), 1, cv2.LINE_AA)
 
             # (2) 绘制全图梯子/绳索 (LadderRopes)
             for lr in mp.ladder_ropes:
@@ -358,22 +348,15 @@ class MinimapTracker:
                 lx2_m, ly2_m = mp.world_to_minimap(lr.x, lr.y_bottom, crop_w=cw, crop_h=ch)
                 if 0 <= lx1_m < cw:
                     cv2.line(canvas, (lx1_m, ly1_m), (lx2_m, ly2_m), (238, 130, 238), 2, cv2.LINE_AA)
-                    cv2.line(canvas, (lx1_m - 4, ly1_m), (lx1_m + 4, ly1_m), (255, 0, 255), 2)
-                    cv2.line(canvas, (lx1_m - 4, ly2_m), (lx1_m + 4, ly2_m), (255, 0, 255), 2)
+                    cv2.line(canvas, (lx1_m - 3, ly1_m), (lx1_m + 3, ly1_m), (255, 0, 255), 2)
+                    cv2.line(canvas, (lx1_m - 3, ly2_m), (lx1_m + 3, ly2_m), (255, 0, 255), 2)
 
             # (3) 绘制当前执行的 A* 路径折线序列
             active_path = getattr(decision_engine, "active_path", [])
             cur_step_idx = getattr(decision_engine, "current_step_idx", 0)
             
             if active_path:
-                prev_pt = None
-                if player_pos:
-                    if is_tall_map:
-                        px_w, py_w = mp.minimap_to_world(player_pos[0], player_pos[1], crop_w=minimap_bgr.shape[1], crop_h=minimap_bgr.shape[0])
-                        prev_pt = mp.world_to_minimap(px_w, py_w, crop_w=cw, crop_h=ch)
-                    else:
-                        prev_pt = player_pos
-
+                prev_pt = player_pos if player_pos else None
                 for s_idx, step in enumerate(active_path):
                     sx_m, sy_m = mp.world_to_minimap(step.target_x, step.target_y, crop_w=cw, crop_h=ch)
                     is_current = (s_idx == cur_step_idx)
@@ -387,20 +370,14 @@ class MinimapTracker:
 
             # (4) 绘制玩家当前吸附的 Foothold 平台 (荧光绿高亮)
             if player_pos:
-                orig_w, orig_h = minimap_bgr.shape[1], minimap_bgr.shape[0]
-                px_w, py_w = mp.minimap_to_world(player_pos[0], player_pos[1], crop_w=orig_w, crop_h=orig_h)
+                px_disp, py_disp = player_pos
+                px_w, py_w = mp.minimap_to_world(player_pos[0], player_pos[1], crop_w=cw, crop_h=ch)
                 cur_fh = mp.snap_to_foothold(px_w, py_w)
-                
-                # 全景画布上的玩家点
-                if is_tall_map:
-                    px_disp, py_disp = mp.world_to_minimap(px_w, py_w, crop_w=cw, crop_h=ch)
-                else:
-                    px_disp, py_disp = player_pos
 
                 if cur_fh:
                     fh_x1_m, fh_y1_m = mp.world_to_minimap(cur_fh.x1, cur_fh.y1, crop_w=cw, crop_h=ch)
                     fh_x2_m, fh_y2_m = mp.world_to_minimap(cur_fh.x2, cur_fh.y2, crop_w=cw, crop_h=ch)
-                    cv2.line(canvas, (fh_x1_m, fh_y1_m), (fh_x2_m, fh_y2_m), (0, 255, 0), 3 if is_tall_map else 2, cv2.LINE_AA)
+                    cv2.line(canvas, (fh_x1_m, fh_y1_m), (fh_x2_m, fh_y2_m), (0, 255, 0), 2, cv2.LINE_AA)
                     cv2.putText(canvas, f"FH#{cur_fh.id}", (fh_x1_m, max(12, fh_y1_m - 4)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 0), 1)
 
@@ -410,15 +387,35 @@ class MinimapTracker:
                 if not p_bounds and decision_engine and hasattr(decision_engine, "get_platform_info"):
                     p_bounds = decision_engine.get_platform_info(px_w, py_w, danger_margin=d_margin)
 
-                if p_bounds and cur_fh:
-                    _, x_min, x_max, safe_left, safe_right, x_mid = p_bounds
-                    dl1_m, dly1_m = mp.world_to_minimap(x_min, cur_fh.avg_y, crop_w=cw, crop_h=ch)
-                    dl2_m, dly2_m = mp.world_to_minimap(safe_left, cur_fh.avg_y, crop_w=cw, crop_h=ch)
-                    dr1_m, dry1_m = mp.world_to_minimap(safe_right, cur_fh.avg_y, crop_w=cw, crop_h=ch)
-                    dr2_m, dry2_m = mp.world_to_minimap(x_max, cur_fh.avg_y, crop_w=cw, crop_h=ch)
+                if p_bounds:
+                    pf_fh, x_min, x_max, safe_left, safe_right, x_mid = p_bounds
+                    render_fh = cur_fh or pf_fh
                     
-                    sl_m, sly_m = mp.world_to_minimap(safe_left, cur_fh.avg_y, crop_w=cw, crop_h=ch)
-                    sr_m, sry_m = mp.world_to_minimap(safe_right, cur_fh.avg_y, crop_w=cw, crop_h=ch)
+                    connected_fhs = getattr(decision_engine, "current_platform_fhs", None) or [render_fh]
+                    # 高亮整段连续相连平台 (荧光绿粗线)
+                    for pfh in connected_fhs:
+                        pfx1_m, pfy1_m = mp.world_to_minimap(pfh.x1, pfh.y1, crop_w=cw, crop_h=ch)
+                        pfx2_m, pfy2_m = mp.world_to_minimap(pfh.x2, pfh.y2, crop_w=cw, crop_h=ch)
+                        cv2.line(canvas, (pfx1_m, pfy1_m), (pfx2_m, pfy2_m), (0, 255, 0), 2, cv2.LINE_AA)
+
+                    def get_plat_y(x_coord):
+                        for pfh in connected_fhs:
+                            if min(pfh.x1, pfh.x2) - 10 <= x_coord <= max(pfh.x1, pfh.x2) + 10:
+                                return pfh.get_y_at_x(x_coord)
+                        return render_fh.get_y_at_x(x_coord)
+
+                    y_xmin = get_plat_y(x_min)
+                    y_sleft = get_plat_y(safe_left)
+                    y_sright = get_plat_y(safe_right)
+                    y_xmax = get_plat_y(x_max)
+
+                    dl1_m, dly1_m = mp.world_to_minimap(x_min, y_xmin, crop_w=cw, crop_h=ch)
+                    dl2_m, dly2_m = mp.world_to_minimap(safe_left, y_sleft, crop_w=cw, crop_h=ch)
+                    dr1_m, dry1_m = mp.world_to_minimap(safe_right, y_sright, crop_w=cw, crop_h=ch)
+                    dr2_m, dry2_m = mp.world_to_minimap(x_max, y_xmax, crop_w=cw, crop_h=ch)
+                    
+                    sl_m, sly_m = mp.world_to_minimap(safe_left, y_sleft, crop_w=cw, crop_h=ch)
+                    sr_m, sry_m = mp.world_to_minimap(safe_right, y_sright, crop_w=cw, crop_h=ch)
                     
                     # 绘制左侧危险区 (亮红 4px)
                     cv2.line(canvas, (dl1_m, dly1_m), (dl2_m, dly2_m), (0, 0, 255), 4, cv2.LINE_AA)
@@ -453,20 +450,11 @@ class MinimapTracker:
             if route_manager and route_manager.nodes:
                 prev_n_pt = None
                 first_n_pt = None
-                orig_w, orig_h = minimap_bgr.shape[1], minimap_bgr.shape[0]
-                for n_idx, node in enumerate(route_manager.nodes):
-                    if is_tall_map:
-                        n_xw, n_yw = mp.minimap_to_world(node.x, node.y, crop_w=orig_w, crop_h=orig_h)
-                        nx_disp, ny_disp = mp.world_to_minimap(n_xw, n_yw, crop_w=cw, crop_h=ch)
-                    else:
-                        n_xw, n_yw = mp.minimap_to_world(node.x, node.y, crop_w=orig_w, crop_h=orig_h)
-                        nx_disp, ny_disp = mp.world_to_minimap(n_xw, n_yw, crop_w=cw, crop_h=ch)
-                    
-                    # 绘制节点发光圆点与序号 (亮橙色)
-                    cv2.circle(canvas, (nx_disp, ny_disp), 5, (0, 140, 255), -1, cv2.LINE_AA)
-                    cv2.circle(canvas, (nx_disp, ny_disp), 8, (0, 215, 255), 1, cv2.LINE_AA)
-                    cv2.putText(canvas, f"P{node.node_id}", (nx_disp + 7, max(12, ny_disp - 4)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 215, 255), 1)
+                for node in route_manager.nodes:
+                    nx_disp, ny_disp = node.x, node.y
+                    cv2.circle(canvas, (nx_disp, ny_disp), 3, (0, 165, 255), -1)
+                    cv2.putText(canvas, f"P{node.node_id}", (nx_disp - 8, max(10, ny_disp - 6)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 215, 255), 1)
 
                     if prev_n_pt is not None:
                         cv2.line(canvas, prev_n_pt, (nx_disp, ny_disp), (0, 165, 255), 1, cv2.LINE_AA)
@@ -479,13 +467,15 @@ class MinimapTracker:
                     cv2.line(canvas, prev_n_pt, first_n_pt, (0, 100, 200), 1, cv2.LINE_AA)
 
             # (5) 绘制顶部 HUD 决策状态条
-            mode_tag = "🌟 全景上帝视角" if is_tall_map else "🌟 A* 寻路"
+            is_plat_patrol = getattr(decision_engine, "enable_platform_patrol", False) if decision_engine else False
+            mode_tag = "🛡️ 平台巡逻" if is_plat_patrol else "🌟 A* 寻路"
+            offset_info = f" | 偏移:({mp.offset_x},{mp.offset_y})" if (mp.offset_x != 0 or mp.offset_y != 0) else ""
             rec_tag = f" | 录制路点:{len(route_manager.nodes)}" if (route_manager and route_manager.nodes) else ""
             if active_path and cur_step_idx < len(active_path):
                 cur_step = active_path[cur_step_idx]
-                step_info = f"[{mode_tag}] {cur_step.action} ({cur_step_idx+1}/{len(active_path)}){rec_tag}"
+                step_info = f"[{mode_tag}] {cur_step.action} ({cur_step_idx+1}/{len(active_path)}){rec_tag}{offset_info}"
             else:
-                step_info = f"[{mode_tag}] IDLE/巡航{rec_tag}"
+                step_info = f"[{mode_tag}] IDLE/巡航{rec_tag}{offset_info}"
                 
             cv2.putText(canvas, step_info, (4, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 255), 1)
             return canvas
