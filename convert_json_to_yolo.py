@@ -55,10 +55,13 @@ LABEL_MAPPING = {
     '罗朗': 'crab',
     '月牙牛魔王': 'tauromacis',
     '牛魔王': 'tauromacis',
-    '独角牛魔王': 'tauromacis'
+    '独角牛魔王': 'tauromacis',
+    '黑石头人': 'dark_stone_golem',
+    '黑石人': 'dark_stone_golem',
+    '黑石巨人': 'dark_stone_golem'
 }
 
-# 保持固定的类别顺序 (24 类: 2 种玩家朝向 + 22 种怪物)
+# 保持固定的类别顺序 (25 类: 2 种玩家朝向 + 23 种怪物)
 CLASS_LIST = [
     'player_left',
     'player_right',
@@ -83,7 +86,8 @@ CLASS_LIST = [
     'lupin',
     'rocky_mask',
     'crab',
-    'tauromacis'
+    'tauromacis',
+    'dark_stone_golem'
 ]
 
 CLASS_TO_ID = {name: idx for idx, name in enumerate(CLASS_LIST)}

@@ -23,6 +23,7 @@ names:
   21: rocky_mask
   22: crab
   23: tauromacis
+  24: dark_stone_golem
 path: ./dataset
 train: images/train
 val: images/val

@@ -16,7 +16,7 @@ TRAIN_LBL_DIR = os.path.join(DATASET_DIR, "labels", "train")
 VAL_LBL_DIR = os.path.join(DATASET_DIR, "labels", "val")
 YAML_PATH = os.path.join(BASE_DIR, "data.yaml")
 
-# 默认检测目标类别列表 (官方英文名称映射，共 24 类: 2 种玩家朝向 + 22 种怪物)
+# 默认检测目标类别列表 (官方英文名称映射，共 25 类: 2 种玩家朝向 + 23 种怪物)
 CLASS_NAMES = [
     'player_left',
     'player_right',
@@ -41,7 +41,8 @@ CLASS_NAMES = [
     'lupin',
     'rocky_mask',
     'crab',
-    'tauromacis'
+    'tauromacis',
+    'dark_stone_golem'
 ]
 
 
