@@ -263,33 +263,35 @@ class MapParser:
         disp_y = raw_y_mm * ry
         return int(round(disp_x)), int(round(disp_y))
 
-    def snap_to_foothold(self, x_world, y_world, margin=30):
+    def snap_to_foothold(self, x_world, y_world, margin=45, margin_y=60):
         """
         根据当前世界坐标吸附到玩家脚下所在的最近平台 Foothold
-        采用非对称区间设计：
-        - 玩家在平台上/上方 (y_world <= fh_y): 允许 35px 容差 (下落/站立吸附)
-        - 玩家在平台下方 (y_world > fh_y): 仅允许 12px 极小容差 (严防爬绳时提前吸附上一层)
+        支持宽容度自适应与就近兜底，确保玩家在跳跃、蹲下或小地图微小偏移时均能稳定吸附平台
         """
         best_fh = None
         min_score = 999999
 
+        # 1. 优先吸附 X 坐标覆盖且高度差 <= margin_y 的水平平台
         for fh in self.horizontal_fhs:
             if fh.contains_x(x_world, margin=margin):
                 fh_y = fh.get_y_at_x(x_world)
-                dy = y_world - fh_y # 负数代表在平台上方，正数代表在平台下方
-                
-                # 非对称容差判断
-                if dy <= 0 and abs(dy) <= 35:
-                    # 站在平台上或从上方落脚中
-                    score = abs(dy)
+                dy = abs(y_world - fh_y)
+                if dy <= margin_y:
+                    score = dy
                     if score < min_score:
                         min_score = score
                         best_fh = fh
-                elif dy > 0 and dy <= 12:
-                    # 仅当身体已完全登顶平台边缘 (<= 12px) 时才允许吸附
-                    score = dy * 2.0
-                    if score < min_score:
-                        min_score = score
+
+        # 2. 兜底搜索：若未精确命中，寻找水平间距 <= 60 且垂直落差 <= 100 的最近平台
+        if best_fh is None:
+            for fh in self.horizontal_fhs:
+                min_fx, max_fx = min(fh.x1, fh.x2), max(fh.x1, fh.x2)
+                dx = max(0, min_fx - x_world, x_world - max_fx)
+                dy = abs(y_world - fh.avg_y)
+                if dx <= 60 and dy <= 100:
+                    dist = math.hypot(dx, dy)
+                    if dist < min_score:
+                        min_score = dist
                         best_fh = fh
 
         return best_fh

@@ -534,6 +534,23 @@ class DetectorApp(QMainWindow):
         h_nav_mode.addWidget(self.chk_advanced_nav)
         map_nav_layout.addLayout(h_nav_mode)
 
+        h_platform = QHBoxLayout()
+        self.chk_platform_patrol = QCheckBox("🛡️ 平台打怪 (锁定当前平台与避险)")
+        self.chk_platform_patrol.setStyleSheet("color: #a6e3a1; font-weight: bold;")
+        self.chk_platform_patrol.setToolTip("根据导入的地图 XML 自动判定玩家所在的单一平台，无视一切寻路节点；左右边缘设立危险区，落入危险区立刻退出战斗并往中点回撤，在安全区两端来回巡逻。")
+        self.chk_platform_patrol.toggled.connect(self.on_platform_mode_toggled)
+        h_platform.addWidget(self.chk_platform_patrol)
+
+        h_platform.addWidget(QLabel("安全边界/避险边距:"))
+        self.sp_danger_margin = QSpinBox()
+        self.sp_danger_margin.setRange(20, 600)
+        self.sp_danger_margin.setValue(150)
+        self.sp_danger_margin.setSuffix(" px")
+        self.sp_danger_margin.setFixedWidth(75)
+        self.sp_danger_margin.setToolTip("平台左右两侧设立的危险区避险距离(px)。默认 150px，若平台较小或需要更大活动范围可调小。")
+        h_platform.addWidget(self.sp_danger_margin)
+        map_nav_layout.addLayout(h_platform)
+
         h_map_select = QHBoxLayout()
         h_map_select.addWidget(QLabel("地图 XML:"))
         self.cb_map_xml = QComboBox()
@@ -674,8 +691,9 @@ class DetectorApp(QMainWindow):
         self.buff_scroll.setWidget(self.buff_container)
         strat_layout.addWidget(self.buff_scroll, 1)
 
-        # 载入或初始化默认 Buff 项
+        # 载入或初始化默认 Buff 项与地图列表
         self.load_combat_config()
+        self.refresh_map_xml_list()
 
         right_layout.addWidget(strat_group, 1)
 
@@ -960,6 +978,31 @@ class DetectorApp(QMainWindow):
         self.cb_map_xml.blockSignals(False)
         if found_maps:
             self.log(f"【地图数据扫描】在 /map 中扫描到 {len(found_maps)} 份地图数据: {found_maps}")
+            # 自动预加载选中的首份地图 XML，确保小地图 HUD 即刻就绪
+            if self.decision_engine.map_parser is None and self.cb_map_xml.count() > 0:
+                first_xml = self.cb_map_xml.itemData(0)
+                if first_xml and os.path.exists(first_xml):
+                    if self.decision_engine.load_map_xml(first_xml):
+                        self._apply_map_canvas_size()
+
+    def on_platform_mode_toggled(self, checked):
+        """平台打怪模式切换"""
+        if checked:
+            self.cb_map_xml.setEnabled(True)
+            self.btn_refresh_maps.setEnabled(True)
+            xml_path = self.cb_map_xml.currentData()
+            if xml_path and os.path.exists(xml_path):
+                if not self.decision_engine.map_parser:
+                    self.decision_engine.load_map_xml(xml_path)
+                    self._apply_map_canvas_size()
+                self.log(f"🛡️ 【模式切换】已启用 平台打怪 模式 (已锁定地图: {os.path.basename(xml_path)})")
+            else:
+                self.log("【提示】未找到有效的地图 XML，请先在 /map 文件夹中放入解包数据")
+        else:
+            if not self.chk_advanced_nav.isChecked():
+                self.cb_map_xml.setEnabled(False)
+                self.btn_refresh_maps.setEnabled(False)
+            self.log("🛡️ 【模式切换】已退出 平台打怪 模式")
 
     def on_nav_mode_toggled(self, checked):
         """高级地图 XML 寻路与传统路线录制模式自由切换"""
@@ -968,26 +1011,25 @@ class DetectorApp(QMainWindow):
             self.btn_refresh_maps.setEnabled(True)
             xml_path = self.cb_map_xml.currentData()
             if xml_path and os.path.exists(xml_path):
-                if self.decision_engine.load_map_xml(xml_path):
+                if not self.decision_engine.map_parser:
+                    self.decision_engine.load_map_xml(xml_path)
                     self._apply_map_canvas_size()
-                    self.log(f"【模式切换】已启用 🌟 高级 XML 地图拓扑寻路模式 (已载入: {os.path.basename(xml_path)})")
-                else:
-                    self.log("【错误】加载地图 XML 失败，回退至传统模式")
+                self.log(f"【模式切换】已启用 🌟 高级 XML 地图拓扑寻路模式 (已载入: {os.path.basename(xml_path)})")
             else:
                 self.log("【提示】未找到有效的地图 XML，请先在 /map 文件夹中放入解包数据")
         else:
-            self.cb_map_xml.setEnabled(False)
-            self.btn_refresh_maps.setEnabled(False)
+            if not self.chk_platform_patrol.isChecked():
+                self.cb_map_xml.setEnabled(False)
+                self.btn_refresh_maps.setEnabled(False)
             self.log("【模式切换】已切回 🚶 传统按键录制巡逻模式 (F1~F4 路线)")
 
     def on_map_xml_changed(self, index):
         """切换选择的地图 XML"""
-        if self.chk_advanced_nav.isChecked():
-            xml_path = self.cb_map_xml.currentData()
-            if xml_path and os.path.exists(xml_path):
-                if self.decision_engine.load_map_xml(xml_path):
-                    self._apply_map_canvas_size()
-                    self.log(f"【地图更新】已切换高级寻路地图为: {os.path.basename(xml_path)}")
+        xml_path = self.cb_map_xml.currentData()
+        if xml_path and os.path.exists(xml_path):
+            if self.decision_engine.load_map_xml(xml_path):
+                self._apply_map_canvas_size()
+                self.log(f"【地图更新】已载入地图: {os.path.basename(xml_path)}，小地图平台已就绪")
 
     def _apply_map_canvas_size(self):
         """根据当前地图 XML 的真实 canvas 尺寸自动设置小地图框选宽高"""
@@ -1106,6 +1148,7 @@ class DetectorApp(QMainWindow):
                 "aoe_dir_mode": self.cb_aoe_dir_mode.currentText(),
                 "monster_agro_dist": self.sp_agro_dist.value(),
                 "jump_key": self.cb_key_jump.currentText(),
+                "danger_margin": self.sp_danger_margin.value(),
                 "buffs": buffs_data
             }
 
@@ -1158,6 +1201,8 @@ class DetectorApp(QMainWindow):
                 idx = self.cb_key_jump.findText(cfg["jump_key"])
                 if idx >= 0:
                     self.cb_key_jump.setCurrentIndex(idx)
+            if "danger_margin" in cfg:
+                self.sp_danger_margin.setValue(int(cfg["danger_margin"]))
 
             buffs_data = cfg.get("buffs", [])
             if buffs_data:
@@ -1562,6 +1607,8 @@ class DetectorApp(QMainWindow):
                 "monster_agro_dist": self.sp_agro_dist.value(),
                 "jump_key": self.cb_key_jump.currentText(),
                 "enable_advanced_nav": self.chk_advanced_nav.isChecked(),
+                "enable_platform_patrol": self.chk_platform_patrol.isChecked(),
+                "danger_margin": self.sp_danger_margin.value(),
                 "crop_w": self.sp_crop_w.value(),
                 "crop_h": self.sp_crop_h.value()
             }

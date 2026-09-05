@@ -404,6 +404,43 @@ class MinimapTracker:
                     cv2.putText(canvas, f"FH#{cur_fh.id}", (fh_x1_m, max(12, fh_y1_m - 4)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 0), 1)
 
+                # 🌟 平台打怪模式：高亮安全区 (亮青/黄) 与两端危险区 (亮红粗线)
+                d_margin = getattr(decision_engine, "current_danger_margin", 150) if decision_engine else 150
+                p_bounds = getattr(decision_engine, "current_platform_bounds", None)
+                if not p_bounds and decision_engine and hasattr(decision_engine, "get_platform_info"):
+                    p_bounds = decision_engine.get_platform_info(px_w, py_w, danger_margin=d_margin)
+
+                if p_bounds and cur_fh:
+                    _, x_min, x_max, safe_left, safe_right, x_mid = p_bounds
+                    dl1_m, dly1_m = mp.world_to_minimap(x_min, cur_fh.avg_y, crop_w=cw, crop_h=ch)
+                    dl2_m, dly2_m = mp.world_to_minimap(safe_left, cur_fh.avg_y, crop_w=cw, crop_h=ch)
+                    dr1_m, dry1_m = mp.world_to_minimap(safe_right, cur_fh.avg_y, crop_w=cw, crop_h=ch)
+                    dr2_m, dry2_m = mp.world_to_minimap(x_max, cur_fh.avg_y, crop_w=cw, crop_h=ch)
+                    
+                    sl_m, sly_m = mp.world_to_minimap(safe_left, cur_fh.avg_y, crop_w=cw, crop_h=ch)
+                    sr_m, sry_m = mp.world_to_minimap(safe_right, cur_fh.avg_y, crop_w=cw, crop_h=ch)
+                    
+                    # 绘制左侧危险区 (亮红 4px)
+                    cv2.line(canvas, (dl1_m, dly1_m), (dl2_m, dly2_m), (0, 0, 255), 4, cv2.LINE_AA)
+                    cv2.line(canvas, (dl1_m, dly1_m - 4), (dl1_m, dly1_m + 4), (0, 0, 255), 2)
+                    
+                    # 绘制右侧危险区 (亮红 4px)
+                    cv2.line(canvas, (dr1_m, dry1_m), (dr2_m, dry2_m), (0, 0, 255), 4, cv2.LINE_AA)
+                    cv2.line(canvas, (dr2_m, dry2_m - 4), (dr2_m, dry2_m + 4), (0, 0, 255), 2)
+                    
+                    # 绘制中间安全巡逻区 (亮青 4px)
+                    cv2.line(canvas, (sl_m, sly_m), (sr_m, sry_m), (255, 255, 0), 4, cv2.LINE_AA)
+                    cv2.circle(canvas, (sl_m, sly_m), 4, (0, 255, 255), -1)
+                    cv2.circle(canvas, (sr_m, sry_m), 4, (0, 255, 255), -1)
+                    
+                    # 绘制文字指示
+                    cv2.putText(canvas, "SAFE", (sl_m + 2, max(12, sly_m - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
+                    cv2.putText(canvas, f"DANGER({d_margin})", (dl1_m, max(12, dly1_m - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.32, (0, 0, 255), 1)
+                    
+                    if getattr(decision_engine, "is_escaping_platform_danger", False):
+                        cv2.putText(canvas, "⚠️ ESCAPING DANGER ZONE", (10, max(15, ch - 8)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 255), 1)
+
                 # 绘制玩家定位准心 (十字 + 亮青双圆)
                 cv2.circle(canvas, (px_disp, py_disp), 7, (255, 255, 0), 2, cv2.LINE_AA)
                 cv2.circle(canvas, (px_disp, py_disp), 3, (0, 0, 255), -1, cv2.LINE_AA)

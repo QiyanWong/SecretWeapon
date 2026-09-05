@@ -63,9 +63,14 @@ class DecisionEngine:
         self.no_combat_max_duration = 30.0 # 连续 30s 无战斗进入待机
         self.micro_idle_end_time = 0.0   # 巡逻路点微发呆结束时间戳 (1.0~2.0s)
         self.waypoint_spatial_jitter_x = 0 # 空间路点与折返点动态随机漂移 (±12px)
-        self.state_switch_interval = 0.5 # 持续无怪达到此时长后切回寻路 (秒)
-        self.attack_cooldown = 0.6       # 默认后摇间隔
         self.last_log_time = 0           # 限流日志打印时间
+        
+        # 平台打怪与危险区防掉落避险系统
+        self.current_danger_margin = 150   # 平台左右危险区避险边距 (px)
+        self.platform_patrol_dir = "RIGHT" # 平台来回巡逻方向 ("RIGHT" / "LEFT")
+        self.is_escaping_platform_danger = False # 危险区紧急回撤标志
+        self.last_platform_danger_log_time = 0.0 # 危险区日志限流
+        self.current_platform_bounds = None # (curr_fh, x_min, x_max, safe_left, safe_right, x_mid)
 
     def load_map_xml(self, xml_path):
         """加载解包地图 XML 并初始化 A* 拓扑寻路器"""
@@ -102,6 +107,49 @@ class DecisionEngine:
             self.pathfinder = None
             return False
 
+    def get_platform_info(self, x_world, y_world, danger_margin=150):
+        """
+        根据当前世界坐标定位玩家脚下所在的连续完整平台，并计算左右 150px 危险区边界
+        返回: (curr_fh, x_min, x_max, safe_left, safe_right, x_mid) 或 None
+        """
+        if not self.map_parser:
+            return None
+            
+        curr_fh = self.map_parser.snap_to_foothold(x_world, y_world, margin=60)
+        if not curr_fh:
+            return None
+            
+        visited = {curr_fh.id}
+        queue = [curr_fh]
+        connected = [curr_fh]
+        
+        while queue:
+            f = queue.pop(0)
+            for o in self.map_parser.horizontal_fhs:
+                if o.id in visited:
+                    continue
+                # 检查连续相接 (端点横向贴合 <= 15px, 纵向落差 <= 20px)
+                if (abs(o.x2 - f.x1) <= 15 and abs(o.y2 - f.y1) <= 20) or \
+                   (abs(o.x1 - f.x2) <= 15 and abs(o.y1 - f.y2) <= 20):
+                    visited.add(o.id)
+                    queue.append(o)
+                    connected.append(o)
+                    
+        x_min = min(min(f.x1, f.x2) for f in connected)
+        x_max = max(max(f.x1, f.x2) for f in connected)
+        total_w = x_max - x_min
+        
+        # 针对极窄平台做动态收缩保护 (避免窄平台上安全区消失)
+        actual_margin = danger_margin
+        if total_w < (danger_margin * 2 + 40):
+            actual_margin = max(20, int(total_w * 0.25))
+            
+        safe_left = x_min + actual_margin
+        safe_right = x_max - actual_margin
+        x_mid = (x_min + x_max) / 2.0
+        
+        return curr_fh, x_min, x_max, safe_left, safe_right, x_mid
+
     def update(self, game_screen_player_pos, game_screen_monsters, player_state, 
                minimap_player_pos, config):
         """
@@ -125,6 +173,67 @@ class DecisionEngine:
         self.MONSTER_AGRO_DIST = config.get("monster_agro_dist", 500)
         self.ATTACK_RANGE_Y = config.get("attack_range_y", 120)
         self.state_switch_interval = config.get("state_switch_interval", 0.5)
+
+        # 🌟 平台打怪模式：最高优先级危险区防掉落避险拦截
+        enable_platform_patrol = config.get("enable_platform_patrol", False)
+        crop_w = config.get("crop_w", None)
+        crop_h = config.get("crop_h", None)
+        danger_margin = config.get("danger_margin", 150)
+        self.current_danger_margin = danger_margin
+        
+        if enable_platform_patrol and self.map_parser:
+            mx, my = minimap_player_pos
+            curr_xw, curr_yw = self.map_parser.minimap_to_world(mx, my, crop_w=crop_w, crop_h=crop_h)
+            p_info = self.get_platform_info(curr_xw, curr_yw, danger_margin=danger_margin)
+            if p_info:
+                curr_fh, x_min, x_max, safe_left, safe_right, x_mid = p_info
+                self.current_platform_bounds = p_info
+                
+                # (1) 落入左侧危险区 (X < safe_left): 强制向右回撤中点，并同步巡逻方向为向右
+                if curr_xw < safe_left:
+                    self.is_escaping_platform_danger = True
+                    self.platform_patrol_dir = "RIGHT"
+                    self.waypoint_spatial_jitter_x = random.randint(0, 8)
+                    self.gc.release_key("LEFT")
+                    self.gc.press_key("RIGHT")
+                    
+                    # 若当前处于战斗状态，立即强制退出战斗
+                    if self.state in [FSMState.COMBAT, FSMState.COMBAT_MOVING]:
+                        self._set_state(FSMState.PATROLLING)
+                        self.combat_target_pos = None
+                        self.combat_start_time = 0
+                        
+                    if now - self.last_platform_danger_log_time >= 1.2:
+                        self.last_platform_danger_log_time = now
+                        print(f"🚨 [平台避险] 玩家落入左侧 {danger_margin}px 危险区 (X={curr_xw:.0f} < 安全界限 {safe_left:.0f})！强制退出战斗，往平台中点 ({x_mid:.0f}) 紧急回退！")
+                    return
+                    
+                # (2) 落入右侧危险区 (X > safe_right): 强制向左回撤中点，并同步巡逻方向为向左
+                elif curr_xw > safe_right:
+                    self.is_escaping_platform_danger = True
+                    self.platform_patrol_dir = "LEFT"
+                    self.waypoint_spatial_jitter_x = random.randint(0, 8)
+                    self.gc.release_key("RIGHT")
+                    self.gc.press_key("LEFT")
+                    
+                    # 若当前处于战斗状态，立即强制退出战斗
+                    if self.state in [FSMState.COMBAT, FSMState.COMBAT_MOVING]:
+                        self._set_state(FSMState.PATROLLING)
+                        self.combat_target_pos = None
+                        self.combat_start_time = 0
+                        
+                    if now - self.last_platform_danger_log_time >= 1.2:
+                        self.last_platform_danger_log_time = now
+                        print(f"🚨 [平台避险] 玩家落入右侧 {danger_margin}px 危险区 (X={curr_xw:.0f} > 安全界限 {safe_right:.0f})！强制退出战斗，往平台中点 ({x_mid:.0f}) 紧急回退！")
+                    return
+                else:
+                    self.is_escaping_platform_danger = False
+            else:
+                self.current_platform_bounds = None
+                self.is_escaping_platform_danger = False
+        else:
+            self.current_platform_bounds = None
+            self.is_escaping_platform_danger = False
 
         # 1. 查找屏幕内符合攻击距离与群攻门槛的怪物
         closest_same_level_monster = None
@@ -186,8 +295,8 @@ class DecisionEngine:
         if self.state == FSMState.IDLE:
             self._set_state(FSMState.PATROLLING)
 
-        # 攀爬锁：一旦正在攀爬 (is_climbing_rope 为 True 或检测到 climb 动作)，最高优先级退出打怪
-        is_climbing = self.is_climbing_rope or (player_state == "climb")
+        # 攀爬锁：仅在真正攀爬绳子/梯子且非平台打怪模式时触发
+        is_climbing = self.is_climbing_rope or (player_state == "climb" and not enable_platform_patrol and not self.current_platform_bounds)
         if is_climbing and self.state in [FSMState.COMBAT, FSMState.COMBAT_MOVING]:
             print("【攀爬锁触发】正在攀爬绳子/梯子，暂停打怪状态，专注登顶！")
             self._set_state(FSMState.PATROLLING)
@@ -205,62 +314,62 @@ class DecisionEngine:
 
         # 规则 0: 处于长时间无怪就近发呆待机状态 (RESTING)
         if self.state == FSMState.RESTING:
-            if has_agro_monster or has_attack_targets:
-                print(f"[RESTING -> COMBAT] 待机发呆中发现周围刷新怪物！立刻唤醒，切入战斗！")
+            if has_attack_targets:
+                print(f"[RESTING -> COMBAT] 待机发呆中发现周围怪物进入攻击范围！立刻唤醒，切入战斗！")
                 self.no_combat_start_time = 0
-                if has_attack_targets:
-                    self._set_state(FSMState.COMBAT)
-                    self.combat_start_time = now
-                    self.combat_target_pos = None
-                else:
-                    self._set_state(FSMState.COMBAT_MOVING)
-                    self.combat_target_pos = closest_same_level_monster
+                self._set_state(FSMState.COMBAT)
+                self.combat_start_time = now
+                self.combat_target_pos = None
+            elif has_agro_monster:
+                print(f"[RESTING -> COMBAT_MOVING] 待机发呆中发现周围刷新怪物！立刻唤醒，切入追击走位！")
+                self.no_combat_start_time = 0
+                self._set_state(FSMState.COMBAT_MOVING)
+                self.combat_target_pos = closest_same_level_monster
             else:
                 # 保持原地待机发呆，等待怪物刷新
                 self.gc.clear_movement()
 
-        # 规则 A: 正在寻路 (PATROLLING) -> 引入拟人化认知反应延迟缓冲 (120ms~220ms)
+        # 规则 A: 正在寻路/巡逻 (PATROLLING)
         elif self.state == FSMState.PATROLLING and not is_climbing:
-            if has_agro_monster:
+            if has_attack_targets:
+                # 1. 怪物已在有效攻击范围内：立刻切入 COMBAT 模式攻击！
                 self.no_combat_start_time = 0
-                if self.first_monster_seen_time == 0:
-                    self.first_monster_seen_time = now
-                    if hasattr(self.gc, 'jitter') and self.gc.jitter:
-                        self.reaction_delay_target = self.gc.jitter.get_reaction_delay()
-                    else:
-                        self.reaction_delay_target = 0.16
-
-                # 等待拟人化感知延迟结束，模拟真实人眼发现怪物到大脑反应下达动作的时延
-                if now - self.first_monster_seen_time >= self.reaction_delay_target:
-                    if has_attack_targets:
-                        self._set_state(FSMState.COMBAT)
-                        self.combat_start_time = now
-                        self.combat_target_pos = None
-                    else:
-                        self._set_state(FSMState.COMBAT_MOVING)
-                        self.combat_target_pos = closest_same_level_monster
-                    self.first_monster_seen_time = 0
+                self.first_monster_seen_time = 0
+                self._set_state(FSMState.COMBAT)
+                self.combat_start_time = now
+                self.combat_target_pos = None
+            elif has_agro_monster:
+                # 2. 范围内发现同高度怪物：立刻切入 COMBAT_MOVING 走位追击！
+                self.no_combat_start_time = 0
+                self.first_monster_seen_time = 0
+                self._set_state(FSMState.COMBAT_MOVING)
+                self.combat_target_pos = closest_same_level_monster
             else:
                 self.first_monster_seen_time = 0
-                # 30 秒连续无战斗脱战检测：如果持续 30 秒没有遇到怪，直接就近在当前节点发呆待机
-                if self.no_combat_start_time == 0:
-                    self.no_combat_start_time = now
-                elif (now - self.no_combat_start_time) >= self.no_combat_max_duration:
-                    print(f"[PATROL -> RESTING] 连续 {now - self.no_combat_start_time:.1f}s 未进入战斗，停止左右重复巡逻，就近在当前节点发呆待机...")
-                    self.gc.clear_movement()
-                    self._set_state(FSMState.RESTING)
+                # 平台打怪模式下不触发 30s 停止巡逻发呆，保持左右两端持续巡逻
+                if enable_platform_patrol:
                     self.no_combat_start_time = 0
+                else:
+                    # 30 秒连续无战斗脱战检测：如果持续 30 秒没有遇到怪，直接就近在当前节点发呆待机
+                    if self.no_combat_start_time == 0:
+                        self.no_combat_start_time = now
+                    elif (now - self.no_combat_start_time) >= self.no_combat_max_duration:
+                        print(f"[PATROL -> RESTING] 连续 {now - self.no_combat_start_time:.1f}s 未进入战斗，停止左右重复巡逻，就近在当前节点发呆待机...")
+                        self.gc.clear_movement()
+                        self._set_state(FSMState.RESTING)
+                        self.no_combat_start_time = 0
 
         # 规则 B: 正在战斗输出 (COMBAT)
         elif self.state == FSMState.COMBAT and not is_climbing:
             self.no_combat_start_time = 0
             if has_attack_targets:
                 # 攻击范围内有怪，持续攻击 (计时已在上方清零)
-                pass
+                self.no_monster_start_time = 0
             elif has_agro_monster:
                 # 攻击范围内怪被打退/走动，但同平台仍有怪在寻怪范围内，立刻接近
                 self._set_state(FSMState.COMBAT_MOVING)
                 self.combat_target_pos = closest_same_level_monster
+                self.no_monster_start_time = 0
             else:
                 # 范围内无怪：直接开始计时，如果期间有怪直接清零，直到达到设定间隔仍然无怪才切回寻路
                 if self.no_monster_start_time == 0:
@@ -288,9 +397,11 @@ class DecisionEngine:
                 self._set_state(FSMState.COMBAT)
                 self.combat_start_time = now
                 self.combat_target_pos = None
+                self.no_monster_start_time = 0
             elif has_agro_monster:
                 # 目标怪仍在寻怪范围，继续向其移动
                 self.combat_target_pos = closest_same_level_monster
+                self.no_monster_start_time = 0
             else:
                 # 追击目标丢失且范围内无怪 -> 同样执行无怪静默计时
                 if self.no_monster_start_time == 0:
@@ -340,7 +451,12 @@ class DecisionEngine:
             self.gc.clear_movement()
             return
 
-        # 模式分流：若启用了高级 XML 寻路且已成功载入地图拓扑，走高级 A* 驱动
+        # 模式分流 1: 若勾选了【平台打怪】，直接在当前平台的左右安全边界间来回巡逻
+        if config.get("enable_platform_patrol", False) and self.map_parser is not None:
+            self._execute_platform_patrol(m_pos, player_state, config)
+            return
+
+        # 模式分流 2: 若启用了高级 XML 寻路且已成功载入地图拓扑，走高级 A* 驱动
         if config.get("enable_advanced_nav", False) and self.pathfinder is not None:
             self._execute_advanced_patrol(m_pos, player_state, config)
             return
@@ -423,6 +539,72 @@ class DecisionEngine:
         # 4. 走向目标终点
         if target_node:
             self._move_towards_minimap(mx, tx, target_node.action_type, config)
+
+    def _execute_platform_patrol(self, m_pos, player_state, config):
+        """
+        平台打怪专用巡逻器：
+        无视一切录制航点与多跳 A* 路径，仅在当前平台的左右危险区边界节点之间来回巡逻
+        """
+        now = time.time()
+        if now < self.micro_idle_end_time:
+            self.gc.clear_movement()
+            return
+            
+        mx, my = m_pos
+        crop_w = config.get("crop_w", None)
+        crop_h = config.get("crop_h", None)
+        danger_margin = config.get("danger_margin", 150)
+        curr_xw, curr_yw = self.map_parser.minimap_to_world(mx, my, crop_w=crop_w, crop_h=crop_h)
+        
+        p_info = self.get_platform_info(curr_xw, curr_yw, danger_margin=danger_margin)
+        if not p_info:
+            self.gc.clear_movement()
+            return
+            
+        curr_fh, x_min, x_max, safe_left, safe_right, x_mid = p_info
+        
+        # 确保安全区宽度合理
+        safe_w = max(10, safe_right - safe_left)
+        # 折返缓冲：避免紧贴危险区边缘触发误判拦截，留出 10~20px 的平滑折返余量
+        turn_buffer = min(20, max(5, int(safe_w * 0.08)))
+        jitter = abs(self.waypoint_spatial_jitter_x) % 8
+        
+        target_left = safe_left + turn_buffer + jitter
+        target_right = safe_right - turn_buffer - jitter
+        if target_left >= target_right:
+            target_left = safe_left + 5
+            target_right = safe_right - 5
+        
+        # 向右巡逻
+        if self.platform_patrol_dir == "RIGHT":
+            if curr_xw >= target_right:
+                # 抵达右侧安全边界！折返向左
+                self.platform_patrol_dir = "LEFT"
+                self.waypoint_spatial_jitter_x = random.randint(0, 8)
+                if random.random() < 0.20:
+                    self.micro_idle_end_time = now + random.uniform(0.6, 1.2)
+                    self.gc.clear_movement()
+                    return
+                self.gc.release_key("RIGHT")
+                self.gc.press_key("LEFT")
+            else:
+                self.gc.release_key("LEFT")
+                self.gc.press_key("RIGHT")
+        # 向左巡逻
+        else:
+            if curr_xw <= target_left:
+                # 抵达左侧安全边界！折返向右
+                self.platform_patrol_dir = "RIGHT"
+                self.waypoint_spatial_jitter_x = random.randint(0, 8)
+                if random.random() < 0.20:
+                    self.micro_idle_end_time = now + random.uniform(0.6, 1.2)
+                    self.gc.clear_movement()
+                    return
+                self.gc.release_key("LEFT")
+                self.gc.press_key("RIGHT")
+            else:
+                self.gc.release_key("RIGHT")
+                self.gc.press_key("LEFT")
 
     def _execute_advanced_patrol(self, m_pos, player_state, config):
         """
@@ -805,11 +987,12 @@ class DecisionEngine:
         aoe_skill_range = config.get("aoe_skill_range", 200)
         aoe_skill_interval = config.get("aoe_skill_interval", 0.6)
         aoe_monster_count = config.get("aoe_monster_count", 3)
-        attack_range_y = config.get("attack_range_y", 70)
         aoe_dir_mode = config.get("aoe_dir_mode", "单向 (单侧面朝方向)")
 
-        # 筛选 Y 高度差在 attack_range_y 范围内的有效怪
-        valid_monsters = [m for m in same_level_monsters if abs(m[1] - py) <= attack_range_y]
+        # same_level_monsters 已经过 update() 双重高度对齐筛选，直接作为有效怪物列表
+        valid_monsters = same_level_monsters
+        if not valid_monsters:
+            return
 
         # 1. 优先判定群攻门槛 (按动态浮动的 aoe_skill_interval 冷却)
         is_single_dir = ("单向" in aoe_dir_mode)
@@ -823,7 +1006,7 @@ class DecisionEngine:
                 l_monsters = [m for m in valid_monsters if 0 <= (px - m[0]) <= aoe_skill_range]
                 if len(r_monsters) >= aoe_monster_count:
                     # 100% 确保面向右侧怪群：轻点 RIGHT，再施放群攻
-                    self.gc.tap_key("RIGHT")
+                    self.gc.tap_key("RIGHT", 0.03)
                     self.gc.tap_key(aoe_skill_key)
                     self.last_aoe_attack_time = now
                     # 重新生成下次群攻浮动 CD (±10%)
@@ -835,7 +1018,7 @@ class DecisionEngine:
                     print(f"[COMBAT] 【单向群攻触发(右侧)】怪数={len(r_monsters)} >= {aoe_monster_count}，转向 [RIGHT] 施放群攻 [{aoe_skill_key}]")
                 elif len(l_monsters) >= aoe_monster_count:
                     # 100% 确保面向左侧怪群：轻点 LEFT，再施放群攻
-                    self.gc.tap_key("LEFT")
+                    self.gc.tap_key("LEFT", 0.03)
                     self.gc.tap_key(aoe_skill_key)
                     self.last_aoe_attack_time = now
                     if hasattr(self.gc, 'jitter') and self.gc.jitter:
@@ -851,7 +1034,7 @@ class DecisionEngine:
                     r_cnt = sum(1 for m in aoe_list if m[0] >= px)
                     l_cnt = len(aoe_list) - r_cnt
                     target_dir = "RIGHT" if r_cnt >= l_cnt else "LEFT"
-                    self.gc.tap_key(target_dir)
+                    self.gc.tap_key(target_dir, 0.03)
                     self.gc.tap_key(aoe_skill_key)
                     self.last_aoe_attack_time = now
                     if hasattr(self.gc, 'jitter') and self.gc.jitter:
@@ -870,7 +1053,7 @@ class DecisionEngine:
                     target_m = min(normal_list, key=lambda m: abs(m[0] - px))
                     # 100% 确保面向怪物：点按对应方向键再出招
                     target_dir = "RIGHT" if target_m[0] >= px else "LEFT"
-                    self.gc.tap_key(target_dir)
+                    self.gc.tap_key(target_dir, 0.03)
                     self.gc.tap_key(normal_atk_key)
                     self.last_normal_attack_time = now
                     # 重新生成下次普攻浮动 CD (±10%)
@@ -885,4 +1068,6 @@ class DecisionEngine:
         self.first_monster_seen_time = 0
         self.no_combat_start_time = 0
         self.micro_idle_end_time = 0
+        self.is_escaping_platform_danger = False
+        self.current_platform_bounds = None
         self.gc.release_all_keys()
