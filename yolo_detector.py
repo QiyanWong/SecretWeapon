@@ -31,7 +31,8 @@ def is_admin():
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QSlider, QComboBox, QGroupBox, QTextEdit, QLineEdit,
-    QSizePolicy, QSpinBox, QDoubleSpinBox, QCheckBox, QFrame, QSplitter, QColorDialog, QInputDialog, QScrollArea
+    QSizePolicy, QSpinBox, QDoubleSpinBox, QCheckBox, QFrame, QSplitter, QColorDialog, QInputDialog, QScrollArea,
+    QProgressBar
 )
 from PyQt5.QtCore import QTimer, Qt, QPoint, QRect, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QFont, QPainter, QPen, QColor
@@ -41,6 +42,7 @@ from game_controller import GameController
 from decision_engine import DecisionEngine
 from captcha_detector import CaptchaAlertDetector
 from auto_buff_manager import AutoBuffManager
+from player_status_tracker import PlayerStatusTracker
 
 # 项目基础路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -277,7 +279,14 @@ class DetectorApp(QMainWindow):
             QComboBox, QSpinBox, QDoubleSpinBox { background-color: #313244; border: 1px solid #45475a; border-radius: 6px; padding: 5px; color: #cdd6f4; }
             QTextEdit { background-color: #11111b; border: 1px solid #313244; border-radius: 6px; color: #a6adc8; font-family: "Consolas", monospace; font-size: 12px; }
             QLabel#lblDisplay, QLabel#lblMinimapDisplay { background-color: #11111b; border: 2px solid #45475a; border-radius: 8px; }
+            QProgressBar { border: 1px solid #45475a; border-radius: 6px; text-align: center; font-weight: bold; background-color: #181825; color: #ffffff; }
+            QProgressBar#barHP::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #ff4b4b, stop:1 #ff2222); border-radius: 5px; }
+            QProgressBar#barMP::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00b4d8, stop:1 #0077b6); border-radius: 5px; }
+            QProgressBar#barEXP::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #f9e2af, stop:1 #fab387); border-radius: 5px; color: #11111b; }
         """)
+
+        # 状态守护与收益监控引擎 (独立于自动打怪)
+        self.status_tracker = PlayerStatusTracker(self.game_controller)
 
         self.init_ui()
         self.log_model_info()
@@ -610,6 +619,172 @@ class DetectorApp(QMainWindow):
 
         right_layout.addWidget(map_nav_group)
 
+        # 🌟 状态守护、经验测速与金币收益看板 GroupBox (完全独立于自动打怪)
+        status_profit_group = QGroupBox("📊 角色状态守护与挂机收益看板 (Stats & Profit)")
+        status_profit_layout = QVBoxLayout(status_profit_group)
+
+        # 0. 独立运行总开关 (Master Toggle)
+        h_master = QHBoxLayout()
+        self.chk_status_monitor = QCheckBox("🛡️ 启用状态监控与自动喝药统计 (独立于自动打怪)")
+        self.chk_status_monitor.setStyleSheet("color: #a6e3a1; font-weight: bold; font-size: 14px;")
+        self.chk_status_monitor.setToolTip("勾选后立刻启动血蓝守护与收益统计；即便不开启自动打怪，只要掉血依然会自动喝药！")
+        self.chk_status_monitor.toggled.connect(self.on_status_monitor_toggled)
+        h_master.addWidget(self.chk_status_monitor)
+
+        self.btn_reset_all_stats = QPushButton("🔄 一键全部重置")
+        self.btn_reset_all_stats.setStyleSheet("background-color: #45475a; color: #fab387; font-weight: bold;")
+        self.btn_reset_all_stats.clicked.connect(self.reset_all_dashboard_stats)
+        h_master.addWidget(self.btn_reset_all_stats)
+        status_profit_layout.addLayout(h_master)
+
+        # 1. 生命守护 (HP) 行与配置
+        hp_box = QGroupBox("🩸 生命保护 (HP)")
+        hp_layout = QVBoxLayout(hp_box)
+        self.bar_hp = QProgressBar()
+        self.bar_hp.setObjectName("barHP")
+        self.bar_hp.setRange(0, 100)
+        self.bar_hp.setValue(100)
+        self.bar_hp.setFormat("HP: %p% (未连接)")
+        self.bar_hp.setFixedHeight(22)
+        hp_layout.addWidget(self.bar_hp)
+
+        h_hp_cfg = QHBoxLayout()
+        h_hp_cfg.addWidget(QLabel("低于阈值喝血:"))
+        self.sp_hp_thresh = QSpinBox()
+        self.sp_hp_thresh.setRange(5, 95)
+        self.sp_hp_thresh.setValue(int(self.status_tracker.hp_threshold))
+        self.sp_hp_thresh.setSuffix(" %")
+        self.sp_hp_thresh.valueChanged.connect(lambda v: setattr(self.status_tracker, "hp_threshold", float(v)))
+        h_hp_cfg.addWidget(self.sp_hp_thresh)
+
+        h_hp_cfg.addWidget(QLabel("按键:"))
+        self.txt_hp_key = QLineEdit(self.status_tracker.hp_key)
+        self.txt_hp_key.setFixedWidth(50)
+        self.txt_hp_key.textChanged.connect(lambda t: setattr(self.status_tracker, "hp_key", t.strip()))
+        h_hp_cfg.addWidget(self.txt_hp_key)
+
+        h_hp_cfg.addWidget(QLabel("单价(金币):"))
+        self.sp_hp_price = QSpinBox()
+        self.sp_hp_price.setRange(0, 50000)
+        self.sp_hp_price.setValue(int(self.status_tracker.hp_potion_price))
+        self.sp_hp_price.valueChanged.connect(lambda v: setattr(self.status_tracker, "hp_potion_price", int(v)))
+        h_hp_cfg.addWidget(self.sp_hp_price)
+        hp_layout.addLayout(h_hp_cfg)
+        status_profit_layout.addWidget(hp_box)
+
+        # 2. 魔法守护 (MP) 行与配置
+        mp_box = QGroupBox("💧 魔法保护 (MP)")
+        mp_layout = QVBoxLayout(mp_box)
+        self.bar_mp = QProgressBar()
+        self.bar_mp.setObjectName("barMP")
+        self.bar_mp.setRange(0, 100)
+        self.bar_mp.setValue(100)
+        self.bar_mp.setFormat("MP: %p% (未连接)")
+        self.bar_mp.setFixedHeight(22)
+        mp_layout.addWidget(self.bar_mp)
+
+        h_mp_cfg = QHBoxLayout()
+        h_mp_cfg.addWidget(QLabel("低于阈值喝蓝:"))
+        self.sp_mp_thresh = QSpinBox()
+        self.sp_mp_thresh.setRange(5, 95)
+        self.sp_mp_thresh.setValue(int(self.status_tracker.mp_threshold))
+        self.sp_mp_thresh.setSuffix(" %")
+        self.sp_mp_thresh.valueChanged.connect(lambda v: setattr(self.status_tracker, "mp_threshold", float(v)))
+        h_mp_cfg.addWidget(self.sp_mp_thresh)
+
+        h_mp_cfg.addWidget(QLabel("按键:"))
+        self.txt_mp_key = QLineEdit(self.status_tracker.mp_key)
+        self.txt_mp_key.setFixedWidth(50)
+        self.txt_mp_key.textChanged.connect(lambda t: setattr(self.status_tracker, "mp_key", t.strip()))
+        h_mp_cfg.addWidget(self.txt_mp_key)
+
+        h_mp_cfg.addWidget(QLabel("单价(金币):"))
+        self.sp_mp_price = QSpinBox()
+        self.sp_mp_price.setRange(0, 50000)
+        self.sp_mp_price.setValue(int(self.status_tracker.mp_potion_price))
+        self.sp_mp_price.valueChanged.connect(lambda v: setattr(self.status_tracker, "mp_potion_price", int(v)))
+        h_mp_cfg.addWidget(self.sp_mp_price)
+        mp_layout.addLayout(h_mp_cfg)
+        status_profit_layout.addWidget(mp_box)
+
+        # 3. 经验监控与测速卡片
+        exp_box = QGroupBox("🌟 经验收益监控 (EXP)")
+        exp_layout = QVBoxLayout(exp_box)
+        self.bar_exp = QProgressBar()
+        self.bar_exp.setObjectName("barEXP")
+        self.bar_exp.setRange(0, 100)
+        self.bar_exp.setValue(0)
+        self.bar_exp.setFormat("EXP: %p% (等待读取)")
+        self.bar_exp.setFixedHeight(22)
+        exp_layout.addWidget(self.bar_exp)
+
+        h_exp_stats = QHBoxLayout()
+        self.lbl_exp_info = QLabel("本次获取: +0.00% | 效率: 0.00%/小时")
+        self.lbl_exp_info.setStyleSheet("color: #f9e2af; font-weight: bold;")
+        h_exp_stats.addWidget(self.lbl_exp_info, 3)
+
+        self.btn_reset_exp = QPushButton("🔄 重置经验统计")
+        self.btn_reset_exp.clicked.connect(self.reset_exp_stats_ui)
+        h_exp_stats.addWidget(self.btn_reset_exp, 1)
+        exp_layout.addLayout(h_exp_stats)
+        status_profit_layout.addWidget(exp_box)
+
+        # 4. 金币收益与药水消耗统计卡片
+        profit_box = QGroupBox("💰 金币与药水利润核算 (背包常开状态监测)")
+        profit_layout = QVBoxLayout(profit_box)
+
+        self.lbl_potion_consumed = QLabel("💊 消耗统计: HP白药水 0 瓶 | MP蓝药水 0 瓶 (总成本: 0 金币)")
+        self.lbl_potion_consumed.setStyleSheet("color: #fab387;")
+        profit_layout.addWidget(self.lbl_potion_consumed)
+
+        self.lbl_meso_profit = QLabel("💎 金币收益: +0 (约 0/小时) | 净利润: +0 金币")
+        self.lbl_meso_profit.setStyleSheet("color: #a6e3a1; font-weight: bold;")
+        profit_layout.addWidget(self.lbl_meso_profit)
+
+        # 背包金币区域框选与数值配置
+        h_meso_bar = QHBoxLayout()
+        self.btn_select_meso_roi = QPushButton("🎯 框选背包金币区域")
+        self.btn_select_meso_roi.setStyleSheet("background-color: #313244; color: #89b4fa; font-weight: bold;")
+        self.btn_select_meso_roi.setToolTip("点击后在左侧主画面上用鼠标拖拽框选出打开的背包底部的金币(Meso)数字框")
+        self.btn_select_meso_roi.clicked.connect(self.enable_meso_roi_select)
+        h_meso_bar.addWidget(self.btn_select_meso_roi)
+
+        self.lbl_meso_roi_info = QLabel("未框选")
+        self.lbl_meso_roi_info.setStyleSheet("color: #cdd6f4;")
+        h_meso_bar.addWidget(self.lbl_meso_roi_info)
+        profit_layout.addLayout(h_meso_bar)
+
+        h_meso_vals = QHBoxLayout()
+        h_meso_vals.addWidget(QLabel("初始金币:"))
+        self.sp_initial_meso = QSpinBox()
+        self.sp_initial_meso.setRange(0, 2147483647)
+        self.sp_initial_meso.setSingleStep(50000)
+        self.sp_initial_meso.setValue(0)
+        self.sp_initial_meso.valueChanged.connect(self.on_initial_meso_changed)
+        h_meso_vals.addWidget(self.sp_initial_meso)
+
+        h_meso_vals.addWidget(QLabel("当前金币:"))
+        self.sp_current_meso = QSpinBox()
+        self.sp_current_meso.setRange(0, 2147483647)
+        self.sp_current_meso.setSingleStep(50000)
+        self.sp_current_meso.setValue(0)
+        self.sp_current_meso.valueChanged.connect(self.on_current_meso_changed)
+        h_meso_vals.addWidget(self.sp_current_meso)
+        profit_layout.addLayout(h_meso_vals)
+
+        h_profit_btns = QHBoxLayout()
+        self.btn_reset_potions = QPushButton("🔄 重置药水计数")
+        self.btn_reset_potions.clicked.connect(self.reset_potion_stats_ui)
+        h_profit_btns.addWidget(self.btn_reset_potions)
+
+        self.btn_reset_meso = QPushButton("🔄 重置金币统计")
+        self.btn_reset_meso.clicked.connect(self.reset_meso_stats_ui)
+        h_profit_btns.addWidget(self.btn_reset_meso)
+        profit_layout.addLayout(h_profit_btns)
+
+        status_profit_layout.addWidget(profit_box)
+        right_layout.addWidget(status_profit_group)
+
         # 右侧：战斗攻击与持续 Buff 技能配置组
         strat_group = QGroupBox("⚔️ 战斗攻击与持续 Buff 技能配置")
         strat_layout = QVBoxLayout(strat_group)
@@ -771,6 +946,78 @@ class DetectorApp(QMainWindow):
         self.lbl_status.setStyleSheet("color: #a6e3a1;")
         main_layout.addWidget(self.lbl_status)
 
+    def on_status_monitor_toggled(self, checked):
+        """状态监控与自动喝药独立总开关"""
+        self.status_tracker.enabled = checked
+        if checked:
+            self.log("🛡️ 【状态守护】已启用生命与魔法自动喝药守护及挂机收益监控 (独立运行)")
+        else:
+            self.log("🛡️ 【状态守护】已停止生命监控与自动喝药")
+
+    def reset_exp_stats_ui(self):
+        """重置经验统计并更新界面"""
+        self.status_tracker.reset_exp_stats()
+        self.lbl_exp_info.setText("本次获取: +0.00% | 效率: 0.00%/小时")
+        self.log("📊 【统计重置】经验获取与效率统计已独立清零")
+
+    def reset_potion_stats_ui(self):
+        """重置药水统计并更新界面"""
+        self.status_tracker.reset_potion_stats()
+        self._update_profit_ui()
+        self.log("📊 【统计重置】药水消耗统计已独立清零")
+
+    def reset_meso_stats_ui(self):
+        """重置金币统计并更新界面"""
+        self.status_tracker.reset_meso_stats()
+        if hasattr(self, 'sp_initial_meso') and hasattr(self, 'sp_current_meso'):
+            self.sp_initial_meso.blockSignals(True)
+            self.sp_initial_meso.setValue(self.sp_current_meso.value())
+            self.sp_initial_meso.blockSignals(False)
+        self._update_profit_ui()
+        self.log("📊 【统计重置】金币收益与时薪统计已独立清零")
+
+    def on_initial_meso_changed(self, val):
+        """手动更改初始金币"""
+        self.status_tracker.initial_meso = val
+        self.status_tracker.gained_meso = max(0, self.status_tracker.current_meso - val)
+        self._update_profit_ui()
+
+    def on_current_meso_changed(self, val):
+        """手动或识别更改当前金币"""
+        self.status_tracker.update_meso_amount(val)
+        self._update_profit_ui()
+
+    def enable_meso_roi_select(self):
+        """激活鼠标框选背包金币区域模式"""
+        self.roi_target_mode = "meso"
+        self.lbl_display.set_selection_mode(True)
+        self.log("🎯 【金币框选激活】请在左侧主画面上按住鼠标左键拖拽，框选出打开的背包底部的金币数字区域。")
+
+    def reset_all_dashboard_stats(self):
+        """一键全部重置状态与收益看板数据"""
+        self.status_tracker.reset_all_stats()
+        self.lbl_exp_info.setText("本次获取: +0.00% | 效率: 0.00%/小时")
+        self._update_profit_ui()
+        self.log("📊 【统计重置】所有经验、药水与金币统计已一键全部清零")
+
+    def _update_profit_ui(self):
+        """刷新药水与金币利润显示"""
+        hp_used = self.status_tracker.used_hp_potions
+        mp_used = self.status_tracker.used_mp_potions
+        cost = self.status_tracker.get_potion_cost()
+        gained_meso = self.status_tracker.gained_meso
+        profit = self.status_tracker.get_net_profit()
+        meso_rate = self.status_tracker.meso_per_hour
+
+        self.lbl_potion_consumed.setText(
+            f"💊 消耗统计: HP白药水 {hp_used} 瓶 | MP蓝药水 {mp_used} 瓶 (总成本: {cost:,} 金币)"
+        )
+        profit_color = "#a6e3a1" if profit >= 0 else "#f38ba8"
+        self.lbl_meso_profit.setStyleSheet(f"color: {profit_color}; font-weight: bold;")
+        self.lbl_meso_profit.setText(
+            f"💎 金币收益: +{gained_meso:,} (约 {int(meso_rate):,}/小时) | 净利润: {profit:+,} 金币"
+        )
+
     def on_controller_mode_toggled(self, checked):
         """响应控制器模式切换勾选"""
         mode = "bluetooth" if checked else "directinput"
@@ -892,8 +1139,9 @@ class DetectorApp(QMainWindow):
         self.log("【自动定位未命中】未能在左上角搜寻到玩家黄点，请使用【🖱️ 手动画框】手动框选一次。")
 
     def enable_mouse_roi_select(self):
+        self.roi_target_mode = "minimap"
         self.lbl_display.set_selection_mode(True)
-        self.log("【框选模式激活】请在左侧主画面上按住鼠标左键拖拽，框选出游戏的小地图区域。")
+        self.log("【小地图框选模式激活】请在左侧主画面上按住鼠标左键拖拽，框选出游戏的小地图区域。")
 
     def enable_template_picker(self):
         self.lbl_display.set_template_pick_mode(True)
@@ -928,9 +1176,16 @@ class DetectorApp(QMainWindow):
         self.sp_crop_h.blockSignals(False)
 
     def on_roi_selected(self, x, y, w, h):
-        self.minimap_tracker.set_crop_box(x, y, w, h)
-        self.update_crop_spins_from_tracker()
-        self.log(f"【小地图对齐成功】框选更新: Left={x}, Top={y}, Width={w}, Height={h}")
+        if getattr(self, "roi_target_mode", "minimap") == "meso":
+            self.status_tracker.inventory_meso_roi = (x, y, w, h)
+            if hasattr(self, 'lbl_meso_roi_info'):
+                self.lbl_meso_roi_info.setText(f"X={x}, Y={y}, W={w}, H={h}")
+            self.log(f"🎯 【背包金币区域对齐成功】已成功框选金币区域: Left={x}, Top={y}, Width={w}, Height={h}")
+            self.roi_target_mode = "minimap"
+        else:
+            self.minimap_tracker.set_crop_box(x, y, w, h)
+            self.update_crop_spins_from_tracker()
+            self.log(f"【小地图对齐成功】框选更新: Left={x}, Top={y}, Width={w}, Height={h}")
 
     def on_template_picked(self, patch):
         self.minimap_tracker.set_player_template(patch)
@@ -1249,6 +1504,16 @@ class DetectorApp(QMainWindow):
                 "danger_margin": self.sp_danger_margin.value(),
                 "captcha_alert": self.chk_captcha_alert.isChecked(),
                 "captcha_volume_boost": self.chk_captcha_volume.isChecked(),
+                "status_monitor_enabled": self.chk_status_monitor.isChecked(),
+                "hp_threshold": self.sp_hp_thresh.value(),
+                "hp_key": self.txt_hp_key.text().strip(),
+                "hp_potion_price": self.sp_hp_price.value(),
+                "mp_threshold": self.sp_mp_thresh.value(),
+                "mp_key": self.txt_mp_key.text().strip(),
+                "mp_potion_price": self.sp_mp_price.value(),
+                "inventory_meso_roi": list(self.status_tracker.inventory_meso_roi) if self.status_tracker.inventory_meso_roi else None,
+                "initial_meso": self.sp_initial_meso.value(),
+                "current_meso": self.sp_current_meso.value(),
                 "buffs": buffs_data
             }
 
@@ -1257,7 +1522,7 @@ class DetectorApp(QMainWindow):
             with open(DEFAULT_COMBAT_CONFIG_PATH, "w", encoding="utf-8") as f:
                 json.dump(cfg, f, ensure_ascii=False, indent=2)
 
-            self.log(f"【技能配置】成功保存攻击与 Buff 技能配置至 {DEFAULT_COMBAT_CONFIG_PATH}")
+            self.log(f"【技能与状态配置】成功保存攻击、Buff与状态守护配置至 {DEFAULT_COMBAT_CONFIG_PATH}")
         except Exception as e:
             self.log(f"【技能配置保存失败】: {e}")
 
@@ -1307,6 +1572,31 @@ class DetectorApp(QMainWindow):
                 self.chk_captcha_alert.setChecked(bool(cfg["captcha_alert"]))
             if "captcha_volume_boost" in cfg:
                 self.chk_captcha_volume.setChecked(bool(cfg["captcha_volume_boost"]))
+
+            # 载入状态守护与喝药统计配置
+            if "status_monitor_enabled" in cfg:
+                self.chk_status_monitor.setChecked(bool(cfg["status_monitor_enabled"]))
+            if "hp_threshold" in cfg:
+                self.sp_hp_thresh.setValue(int(cfg["hp_threshold"]))
+            if "hp_key" in cfg:
+                self.txt_hp_key.setText(cfg["hp_key"])
+            if "hp_potion_price" in cfg:
+                self.sp_hp_price.setValue(int(cfg["hp_potion_price"]))
+            if "mp_threshold" in cfg:
+                self.sp_mp_thresh.setValue(int(cfg["mp_threshold"]))
+            if "mp_key" in cfg:
+                self.txt_mp_key.setText(cfg["mp_key"])
+            if "mp_potion_price" in cfg:
+                self.sp_mp_price.setValue(int(cfg["mp_potion_price"]))
+            if "inventory_meso_roi" in cfg and cfg["inventory_meso_roi"]:
+                self.status_tracker.inventory_meso_roi = tuple(cfg["inventory_meso_roi"])
+                if hasattr(self, 'lbl_meso_roi_info'):
+                    x, y, w, h = self.status_tracker.inventory_meso_roi
+                    self.lbl_meso_roi_info.setText(f"X={x}, Y={y}, W={w}, H={h}")
+            if "initial_meso" in cfg:
+                self.sp_initial_meso.setValue(int(cfg["initial_meso"]))
+            if "current_meso" in cfg:
+                self.sp_current_meso.setValue(int(cfg["current_meso"]))
 
             buffs_data = cfg.get("buffs", [])
             if buffs_data:
@@ -1626,6 +1916,36 @@ class DetectorApp(QMainWindow):
                         cv2.rectangle(game_frame, (cx, cy), (cx + cw, cy + ch), (0, 0, 255), 3)
                         cv2.putText(game_frame, f"CAPTCHA ALERT [{score:.2f}]", (cx, max(20, cy - 8)),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+        # 2.8 角色生命/魔法/经验状态更新与自动喝药守护 (独立于打怪开关)
+        if hasattr(self, 'status_tracker') and self.status_tracker.enabled:
+            hp_pct, mp_pct, exp_pct = self.status_tracker.update_hp_mp_exp(game_frame)
+            
+            # 自动喝药执行
+            potion_msgs = self.status_tracker.check_and_drink_potions()
+            if potion_msgs:
+                for pmsg in potion_msgs:
+                    self.log(f"🩸 {pmsg}")
+                self._update_profit_ui()
+
+            # 刷新 UI 进度条与数据
+            self.bar_hp.setValue(int(hp_pct))
+            self.bar_hp.setFormat(f"HP: {hp_pct:.1f}%")
+            self.bar_mp.setValue(int(mp_pct))
+            self.bar_mp.setFormat(f"MP: {mp_pct:.1f}%")
+            self.bar_exp.setValue(int(exp_pct))
+            self.bar_exp.setFormat(f"EXP: {exp_pct:.2f}%")
+
+            gained = self.status_tracker.gained_exp_pct
+            rate = self.status_tracker.exp_per_hour
+            self.lbl_exp_info.setText(f"本次获取: +{gained:.2f}% | 效率: {rate:.2f}%/小时")
+
+            now_t = time.time()
+            if not hasattr(self, '_last_profit_ui_update'):
+                self._last_profit_ui_update = 0.0
+            if now_t - self._last_profit_ui_update >= 1.0:
+                self._last_profit_ui_update = now_t
+                self._update_profit_ui()
 
         # 3. YOLO 目标识别与决策输入准备
         conf_thresh = self.slider_conf.value() / 100.0
