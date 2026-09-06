@@ -188,8 +188,8 @@ class DetectorApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("冒险岛 YOLO 自动打怪与策略控制台 (特征过滤与 Debug 掩膜版) v2.5")
-        self.resize(1280, 860)
-        self.setMinimumSize(1080, 720)
+        self.resize(1560, 960)
+        self.setMinimumSize(1280, 800)
 
         # 1. 核心状态控制
         self.is_monitoring_preview = True
@@ -342,6 +342,20 @@ class DetectorApp(QMainWindow):
         self.lbl_conf_val = QLabel("0.15")
         self.lbl_conf_val.setStyleSheet("font-weight: bold; color: #f9e2af;")
         top_layout.addWidget(self.lbl_conf_val)
+
+        # 🍓 树莓派纯物理蓝牙硬件按键 / 💻 SendInput 驱动模拟 切换开关
+        self.chk_bluetooth_mode = QCheckBox()
+        self.chk_bluetooth_mode.setToolTip("【勾选】启用树莓派纯物理蓝牙硬件键盘（目标: 192.168.0.190:8888）注入按键，物理级免封\n【取消勾选】回退至本机 Win32 SendInput 驱动级直接模拟按键")
+        is_bt = getattr(self.game_controller, "mode", "bluetooth") == "bluetooth"
+        self.chk_bluetooth_mode.setChecked(is_bt)
+        if is_bt:
+            self.chk_bluetooth_mode.setText("🍓 树莓派蓝牙硬件按键 (物理免封)")
+            self.chk_bluetooth_mode.setStyleSheet("color: #a6e3a1; font-weight: bold; margin-left: 25px;")
+        else:
+            self.chk_bluetooth_mode.setText("💻 本机 SendInput 模拟按键")
+            self.chk_bluetooth_mode.setStyleSheet("color: #fab387; font-weight: bold; margin-left: 25px;")
+        self.chk_bluetooth_mode.toggled.connect(self.on_controller_mode_toggled)
+        top_layout.addWidget(self.chk_bluetooth_mode)
 
         main_layout.addWidget(top_group)
 
@@ -739,10 +753,16 @@ class DetectorApp(QMainWindow):
 
         right_layout.addWidget(strat_group, 1)
 
+        # 将右侧控制看板放入自适应 QScrollArea，确保随着配置增多永远自适应排版、不被裁切
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setWidget(right_panel)
+        right_scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
+
         # Splitter 分割
         splitter.addWidget(left_panel)
-        splitter.addWidget(right_panel)
-        splitter.setSizes([580, 580])
+        splitter.addWidget(right_scroll)
+        splitter.setSizes([740, 780])
         main_layout.addWidget(splitter, 1)
 
         # 底部状态栏
@@ -750,6 +770,19 @@ class DetectorApp(QMainWindow):
         self.lbl_status.setFont(QFont("Segoe UI", 11, QFont.Bold))
         self.lbl_status.setStyleSheet("color: #a6e3a1;")
         main_layout.addWidget(self.lbl_status)
+
+    def on_controller_mode_toggled(self, checked):
+        """响应控制器模式切换勾选"""
+        mode = "bluetooth" if checked else "directinput"
+        self.game_controller.switch_mode(mode)
+        if checked:
+            self.chk_bluetooth_mode.setText("🍓 树莓派蓝牙硬件按键 (物理免封)")
+            self.chk_bluetooth_mode.setStyleSheet("color: #a6e3a1; font-weight: bold; margin-left: 25px;")
+            self.log(f"【控制器切换】已启用：🍓 树莓派纯物理蓝牙硬件键盘 (目标: {self.game_controller.rpi_ip}:{self.game_controller.rpi_port})")
+        else:
+            self.chk_bluetooth_mode.setText("💻 本机 SendInput 模拟按键")
+            self.chk_bluetooth_mode.setStyleSheet("color: #fab387; font-weight: bold; margin-left: 25px;")
+            self.log("【控制器切换】已切换为：💻 本机 Win32 SendInput (DirectInput 扫描码)")
 
     def toggle_mask_view(self):
         self.show_minimap_mask = not self.show_minimap_mask

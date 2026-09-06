@@ -1,3 +1,6 @@
+import os
+import json
+import socket
 import time
 import math
 import random
@@ -202,37 +205,106 @@ class HumanJitter:
 
 
 class GameController:
-    """基于 DirectInput 硬件扫描码与拟人化动力学抖动的按键控制器"""
+    """
+    基于 DirectInput 扫描码 / 树莓派物理蓝牙键盘 与拟人化动力学抖动的按键控制器
+    支持两套底层按键后端：
+      - 'bluetooth': 通过局域网 UDP 将按键发送到树莓派，由树莓派物理蓝牙 HID 键盘向电脑注入 (100% 物理级免封)
+      - 'directinput': 本机 Win32 SendInput 驱动级扫描码模拟
+    """
 
-    def __init__(self, **kwargs):
-        print("[GameController] 初始化 SendInput (DirectInput 扫描码) + HumanJitter 动力学引擎...")
+    def __init__(self, mode=None, rpi_ip=None, rpi_port=None, **kwargs):
+        # 读取本地配置 runtime_config.json
+        cfg_path = os.path.join(os.path.dirname(__file__), "runtime_config.json")
+        cfg = {}
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+            except Exception:
+                pass
+
+        self.mode = mode or cfg.get("controller_mode", "bluetooth")
+        self.rpi_ip = rpi_ip or cfg.get("rpi_ip", "192.168.0.190")
+        self.rpi_port = rpi_port or cfg.get("rpi_port", 8888)
+
         self.pressed_keys = set()
         self.jitter = HumanJitter()
         self.mouse_drifter = HumanMouseDrifter()
+
+        if self.mode == "bluetooth":
+            self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            print(f"[GameController] [模式] 树莓派硬件级蓝牙物理键盘 (目标: {self.rpi_ip}:{self.rpi_port})")
+        else:
+            self.udp_sock = None
+            print("[GameController] [模式] 本机 DirectInput (SendInput 扫描码)")
+
         print("[GameController] 拟人化按键动力学已就绪 (对数正态击键时长、AR(1)肌肉惯性、非对称组合键时序、鼠标微扰)。")
-        print("[GameController] 注意：如果游戏无响应，请确保程序已右键【以管理员身份运行】。")
+
+    def switch_mode(self, new_mode):
+        """动态切换按键模式 ('bluetooth' 或 'directinput')，并自动同步写入 runtime_config.json"""
+        new_mode = new_mode.lower()
+        if new_mode not in ("bluetooth", "directinput"):
+            return
+        if self.mode == new_mode:
+            return
+
+        # 切换前释放所有已按下的按键，避免卡键
+        self.release_all_keys()
+        self.mode = new_mode
+
+        if self.mode == "bluetooth":
+            if not self.udp_sock:
+                self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            print(f"[GameController] [模式切换] 树莓派硬件级蓝牙物理键盘 (目标: {self.rpi_ip}:{self.rpi_port})")
+        else:
+            print("[GameController] [模式切换] 本机 DirectInput (SendInput 扫描码)")
+
+        # 同步持久化写入 runtime_config.json
+        cfg_path = os.path.join(os.path.dirname(__file__), "runtime_config.json")
+        try:
+            cfg = {}
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+            cfg["controller_mode"] = self.mode
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[GameController] 持久化保存配置异常: {e}")
 
     def press_key(self, key_name):
         """按下按键"""
         key_name = key_name.upper()
         if key_name not in self.pressed_keys:
             self.pressed_keys.add(key_name)
-            
-        scan_code = DIK_KEYS.get(key_name)
-        if scan_code:
-            PressKey(scan_code)
+
+        if self.mode == "bluetooth":
+            try:
+                self.udp_sock.sendto(f"P:{key_name}".encode('utf-8'), (self.rpi_ip, self.rpi_port))
+            except Exception as e:
+                print(f"[GameController] 蓝牙发送 P:{key_name} 异常: {e}")
         else:
-            print(f"[GameController] 警告: 找不到按键 {key_name} 的 DirectInput 扫描码！")
+            scan_code = DIK_KEYS.get(key_name)
+            if scan_code:
+                PressKey(scan_code)
+            else:
+                print(f"[GameController] 警告: 找不到按键 {key_name} 的 DirectInput 扫描码！")
 
     def release_key(self, key_name):
         """释放按键"""
         key_name = key_name.upper()
         if key_name in self.pressed_keys:
             self.pressed_keys.remove(key_name)
-            
-        scan_code = DIK_KEYS.get(key_name)
-        if scan_code:
-            ReleaseKey(scan_code)
+
+        if self.mode == "bluetooth":
+            try:
+                self.udp_sock.sendto(f"R:{key_name}".encode('utf-8'), (self.rpi_ip, self.rpi_port))
+            except Exception as e:
+                print(f"[GameController] 蓝牙发送 R:{key_name} 异常: {e}")
+        else:
+            scan_code = DIK_KEYS.get(key_name)
+            if scan_code:
+                ReleaseKey(scan_code)
 
     def tap_key(self, key_name, duration=None):
         """
@@ -268,8 +340,16 @@ class GameController:
 
     def release_all_keys(self):
         """释放所有当前按下的按键"""
-        for k in list(self.pressed_keys):
-            self.release_key(k)
+        if self.mode == "bluetooth":
+            try:
+                self.udp_sock.sendto(b"C:CLEAR", (self.rpi_ip, self.rpi_port))
+            except Exception:
+                pass
+        else:
+            for k in list(self.pressed_keys):
+                scan_code = DIK_KEYS.get(k)
+                if scan_code:
+                    ReleaseKey(scan_code)
         self.pressed_keys.clear()
 
     def clear_movement(self):
