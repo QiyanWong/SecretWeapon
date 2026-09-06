@@ -692,10 +692,22 @@ class DetectorApp(QMainWindow):
 
         # 5. 测谎/符文图形验证弹窗自动识别报警行
         h_captcha = QHBoxLayout()
-        self.chk_captcha_alert = QCheckBox("🚨 开启测谎/符文图形验证弹窗自动警报")
+        self.chk_captcha_alert = QCheckBox("🚨 开启测谎/符文图形验证自动报警")
         self.chk_captcha_alert.setChecked(True)
         self.chk_captcha_alert.setStyleSheet("color: #FF5252; font-weight: bold;")
         h_captcha.addWidget(self.chk_captcha_alert)
+
+        self.chk_captcha_volume = QCheckBox("🔊 报警自动调高系统音量至80%")
+        self.chk_captcha_volume.setChecked(True)
+        self.chk_captcha_volume.setStyleSheet("color: #FFA726; font-weight: bold;")
+        h_captcha.addWidget(self.chk_captcha_volume)
+
+        self.btn_test_captcha_alarm = QPushButton("🔔 报警音量测试")
+        self.btn_test_captcha_alarm.setFixedHeight(26)
+        self.btn_test_captcha_alarm.setStyleSheet("background-color: #37474F; color: #ECEFF1; font-weight: bold; padding: 2px 8px;")
+        self.btn_test_captcha_alarm.clicked.connect(self.test_captcha_alarm)
+        h_captcha.addWidget(self.btn_test_captcha_alarm)
+
         strat_layout.addLayout(h_captcha)
 
         # 6. 持续 Buff 技能动态列表
@@ -1202,6 +1214,8 @@ class DetectorApp(QMainWindow):
                 "monster_agro_dist": self.sp_agro_dist.value(),
                 "jump_key": self.cb_key_jump.currentText(),
                 "danger_margin": self.sp_danger_margin.value(),
+                "captcha_alert": self.chk_captcha_alert.isChecked(),
+                "captcha_volume_boost": self.chk_captcha_volume.isChecked(),
                 "buffs": buffs_data
             }
 
@@ -1256,6 +1270,10 @@ class DetectorApp(QMainWindow):
                     self.cb_key_jump.setCurrentIndex(idx)
             if "danger_margin" in cfg:
                 self.sp_danger_margin.setValue(int(cfg["danger_margin"]))
+            if "captcha_alert" in cfg:
+                self.chk_captcha_alert.setChecked(bool(cfg["captcha_alert"]))
+            if "captcha_volume_boost" in cfg:
+                self.chk_captcha_volume.setChecked(bool(cfg["captcha_volume_boost"]))
 
             buffs_data = cfg.get("buffs", [])
             if buffs_data:
@@ -1277,6 +1295,18 @@ class DetectorApp(QMainWindow):
             self.log(f"【技能配置】已自动恢复历史攻击与 Buff 技能配置自 {DEFAULT_COMBAT_CONFIG_PATH}")
         except Exception as e:
             self.log(f"【技能配置加载失败】: {e}")
+
+    def test_captcha_alarm(self):
+        """手动测试测谎报警音效与自动调高音量至80%"""
+        if hasattr(self, 'captcha_detector') and self.captcha_detector is not None:
+            boost_vol = self.chk_captcha_volume.isChecked()
+            self.captcha_detector.trigger_alarm(boost_volume=boost_vol, target_volume=80, force=True)
+            if boost_vol:
+                self.log("🔔【报警音量测试】已触发测试警报：已自动调高系统音量至 80% 并播放高频警报蜂鸣！")
+            else:
+                self.log("🔔【报警音量测试】已触发测试警报：播放高频警报蜂鸣（未勾选自动调高音量）。")
+        else:
+            self.log("⚠️【报警音量测试】测谎检测器未初始化！")
 
     def add_record_node(self, action_type="WALK"):
         pos = self.player_map_pos or getattr(self, "last_valid_player_map_pos", None)
@@ -1546,14 +1576,16 @@ class DetectorApp(QMainWindow):
                 if self.decision_engine:
                     self.decision_engine.reset()
 
-                # 触发多频急促警报音效
-                self.captcha_detector.trigger_alarm()
+                # 触发多频急促警报音效 (自动调高系统音量至 80%)
+                boost_vol = hasattr(self, 'chk_captcha_volume') and self.chk_captcha_volume.isChecked()
+                self.captcha_detector.trigger_alarm(boost_volume=boost_vol, target_volume=80)
 
                 # 限流 2.0s 打印高危警告日志
                 now_time = time.time()
                 if now_time - getattr(self, 'last_captcha_log_time', 0.0) > 2.0:
                     self.last_captcha_log_time = now_time
-                    self.log("🚨【最高危警报】检测到测谎/符文图形验证弹窗！已紧急制动按键，请立即手动接管！")
+                    vol_hint = "（已自动调高系统音量至80%）" if boost_vol else ""
+                    self.log(f"🚨【最高危警报】检测到测谎/符文图形验证弹窗！{vol_hint}已紧急制动按键，请立即手动接管！")
 
                 # 在监控画面中绘制高亮红色警报边框与文字
                 if self.is_monitoring_preview:

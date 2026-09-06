@@ -4,6 +4,112 @@ import cv2
 import numpy as np
 import threading
 import winsound
+import ctypes
+from ctypes import wintypes, HRESULT, POINTER, c_void_p, c_float, c_uint32, Structure, byref
+
+ole32 = ctypes.oledll.ole32
+
+class _GUID(Structure):
+    _fields_ = [
+        ("Data1", wintypes.DWORD),
+        ("Data2", wintypes.WORD),
+        ("Data3", wintypes.WORD),
+        ("Data4", wintypes.BYTE * 8)
+    ]
+
+    def __init__(self, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8):
+        super().__init__(l, w1, w2, (wintypes.BYTE * 8)(b1, b2, b3, b4, b5, b6, b7, b8))
+
+CLSID_MMDeviceEnumerator = _GUID(0xBCDE0395, 0xE52F, 0x467C, 0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E)
+IID_IMMDeviceEnumerator = _GUID(0xA95664D2, 0x9614, 0x4F35, 0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6)
+IID_IAudioEndpointVolume = _GUID(0x5CDF2C82, 0x841E, 0x4546, 0x97, 0x22, 0x0C, 0xF7, 0x40, 0x78, 0x22, 0x9A)
+
+CLSCTX_ALL = 23
+eRender = 0
+eMultimedia = 1
+
+def boost_system_volume(min_level_percent=80):
+    """
+    通过 Windows 原生 Core Audio COM 接口将系统主音量调高至指定百分比 (默认 80%)，
+    并自动解除静音状态。无需依赖任何第三方库，纳秒级响应。
+    返回: (success: bool, old_vol: float, new_vol: float)
+    """
+    co_initialized = False
+    try:
+        hr = ole32.CoInitialize(None)
+        if hr in (0, 1):
+            co_initialized = True
+    except Exception:
+        pass
+
+    try:
+        enumerator = c_void_p()
+        hr = ole32.CoCreateInstance(
+            byref(CLSID_MMDeviceEnumerator),
+            None,
+            CLSCTX_ALL,
+            byref(IID_IMMDeviceEnumerator),
+            byref(enumerator)
+        )
+        if hr != 0 or not enumerator:
+            return False, 0.0, 0.0
+
+        enum_vtbl = ctypes.cast(ctypes.cast(enumerator, POINTER(c_void_p)).contents, POINTER(c_void_p))
+        GetDefaultAudioEndpoint_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, c_uint32, c_uint32, POINTER(c_void_p))
+        GetDefaultAudioEndpoint = GetDefaultAudioEndpoint_proto(enum_vtbl[4])
+        Release_proto = ctypes.WINFUNCTYPE(c_uint32, c_void_p)
+
+        device = c_void_p()
+        hr = GetDefaultAudioEndpoint(enumerator, eRender, eMultimedia, byref(device))
+        if hr != 0 or not device:
+            Release_proto(enum_vtbl[2])(enumerator)
+            return False, 0.0, 0.0
+
+        dev_vtbl = ctypes.cast(ctypes.cast(device, POINTER(c_void_p)).contents, POINTER(c_void_p))
+        Activate_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, POINTER(_GUID), wintypes.DWORD, c_void_p, POINTER(c_void_p))
+        Activate = Activate_proto(dev_vtbl[3])
+
+        endpoint_volume = c_void_p()
+        hr = Activate(device, byref(IID_IAudioEndpointVolume), CLSCTX_ALL, None, byref(endpoint_volume))
+        if hr != 0 or not endpoint_volume:
+            Release_proto(dev_vtbl[2])(device)
+            Release_proto(enum_vtbl[2])(enumerator)
+            return False, 0.0, 0.0
+
+        vol_vtbl = ctypes.cast(ctypes.cast(endpoint_volume, POINTER(c_void_p)).contents, POINTER(c_void_p))
+
+        # 1. 自动解除静音
+        SetMute_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, wintypes.BOOL, c_void_p)
+        SetMute = SetMute_proto(vol_vtbl[14])
+        SetMute(endpoint_volume, False, None)
+
+        # 2. 获取当前音量
+        GetMasterVolumeLevelScalar_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, POINTER(c_float))
+        GetMasterVolumeLevelScalar = GetMasterVolumeLevelScalar_proto(vol_vtbl[9])
+        current_vol = c_float(0.0)
+        GetMasterVolumeLevelScalar(endpoint_volume, byref(current_vol))
+        curr_val = current_vol.value
+
+        # 3. 调高音量至至少 min_level_percent% (若当前已更高则保持，若低于则调高至目标值)
+        target_scalar = max(curr_val, min(1.0, max(0.0, float(min_level_percent) / 100.0)))
+        SetMasterVolumeLevelScalar_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, c_float, c_void_p)
+        SetMasterVolumeLevelScalar = SetMasterVolumeLevelScalar_proto(vol_vtbl[7])
+        SetMasterVolumeLevelScalar(endpoint_volume, c_float(target_scalar), None)
+
+        Release_proto(vol_vtbl[2])(endpoint_volume)
+        Release_proto(dev_vtbl[2])(device)
+        Release_proto(enum_vtbl[2])(enumerator)
+
+        return True, curr_val, target_scalar
+    except Exception as e:
+        print(f"[boost_system_volume] 异常: {e}")
+        return False, 0.0, 0.0
+    finally:
+        if co_initialized:
+            try:
+                ole32.CoUninitialize()
+            except Exception:
+                pass
 
 class CaptchaAlertDetector:
     """
@@ -157,19 +263,32 @@ class CaptchaAlertDetector:
 
         return False, []
 
-    def trigger_alarm(self):
+    def trigger_alarm(self, boost_volume=True, target_volume=80, force=False):
         """
         触发多频急促警报音效 (非阻塞多线程执行)
+        参数:
+            boost_volume: 是否自动调高系统音量至 80% 并解除静音
+            target_volume: 目标系统音量百分比 (默认 80)
+            force: 是否忽略冷却时间强制触发 (测试用)
         """
         now = time.time()
-        if now - self.last_alarm_time < self.alarm_cooldown or self.is_alarm_playing:
-            return
+        if not force:
+            if now - self.last_alarm_time < self.alarm_cooldown or self.is_alarm_playing:
+                return
         
         self.last_alarm_time = now
         self.is_alarm_playing = True
 
         def _play():
             try:
+                # 1. 自动调高系统主音量至 80% 并解除静音
+                if boost_volume:
+                    try:
+                        boost_system_volume(target_volume)
+                    except Exception as e:
+                        print(f"[CaptchaAlertDetector] 自动调节音量异常: {e}")
+
+                # 2. 播放多频急促警报蜂鸣
                 for _ in range(3):
                     winsound.Beep(2200, 120)
                     time.sleep(0.04)
@@ -182,3 +301,4 @@ class CaptchaAlertDetector:
 
         thread = threading.Thread(target=_play, daemon=True)
         thread.start()
+
