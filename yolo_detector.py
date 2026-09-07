@@ -190,8 +190,8 @@ class DetectorApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("冒险岛 YOLO 自动打怪与策略控制台 (特征过滤与 Debug 掩膜版) v2.5")
-        self.resize(1560, 960)
-        self.setMinimumSize(1280, 800)
+        self.resize(1760, 960)
+        self.setMinimumSize(1400, 780)
 
         # 1. 核心状态控制
         self.is_monitoring_preview = True
@@ -268,8 +268,8 @@ class DetectorApp(QMainWindow):
         self.setStyleSheet("""
             QMainWindow { background-color: #1e1e2e; }
             QWidget { color: #cdd6f4; font-family: "Segoe UI", "Microsoft YaHei"; font-size: 13px; }
-            QGroupBox { font-weight: bold; border: 1px solid #45475a; border-radius: 8px; margin-top: 8px; padding-top: 10px; background-color: #181825; }
-            QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 8px; color: #89b4fa; }
+            QGroupBox { font-weight: bold; border: 1px solid #45475a; border-radius: 8px; margin-top: 6px; padding-top: 24px; background-color: #181825; }
+            QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 12px; top: 6px; padding: 0 4px; color: #89b4fa; }
             QPushButton { background-color: #313244; border: 1px solid #45475a; border-radius: 6px; padding: 6px 12px; font-weight: bold; }
             QPushButton:hover { background-color: #45475a; border-color: #89b4fa; }
             QPushButton#btnBotStart { background-color: #a6e3a1; color: #11111b; border: none; font-size: 14px; }
@@ -428,10 +428,10 @@ class DetectorApp(QMainWindow):
         log_layout.addWidget(self.txt_log)
         left_layout.addWidget(log_group, 1)
 
-        # ====================== 右侧：小地图看板与吸管/调色盘取色组 ======================
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
+        # ====================== 中间：小地图寻路与战斗策略面板 ======================
+        mid_panel = QWidget()
+        mid_layout = QVBoxLayout(mid_panel)
+        mid_layout.setContentsMargins(0, 0, 0, 0)
 
         # 小地图寻路可视化看板 GroupBox
         minimap_group = QGroupBox("🗺️ 小地图寻路看板与对齐设置 (Minimap Dashboard)")
@@ -545,7 +545,7 @@ class DetectorApp(QMainWindow):
         route_file_layout.addWidget(self.btn_clear_route, 1)
         minimap_layout.addLayout(route_file_layout)
 
-        right_layout.addWidget(minimap_group, 2)
+        mid_layout.addWidget(minimap_group, 2)
 
         # 🌟 高级 XML 地图拓扑寻路配置组 (双模式无缝切换)
         map_nav_group = QGroupBox("🗺️ 寻路模式与地图拓扑 (双模式无缝切换)")
@@ -617,13 +617,157 @@ class DetectorApp(QMainWindow):
         h_overlay_align.addWidget(self.btn_reset_overlay)
         map_nav_layout.addLayout(h_overlay_align)
 
-        right_layout.addWidget(map_nav_group)
+        mid_layout.addWidget(map_nav_group)
 
-        # 🌟 状态守护、经验测速与金币收益看板 GroupBox (完全独立于自动打怪)
+        # 中间：战斗攻击与持续 Buff 技能配置组
+        strat_group = QGroupBox("⚔️ 战斗攻击与持续 Buff 技能配置")
+        strat_layout = QVBoxLayout(strat_group)
+
+        # 1. 普攻配置行
+        h_norm = QHBoxLayout()
+        h_norm.addWidget(QLabel("普攻按键:"))
+        self.txt_normal_key = QLineEdit("C")
+        self.txt_normal_key.setFixedWidth(35)
+        h_norm.addWidget(self.txt_normal_key)
+
+        h_norm.addWidget(QLabel("普攻距离(X):"))
+        self.sp_normal_range = QSpinBox()
+        self.sp_normal_range.setRange(20, 800)
+        self.sp_normal_range.setValue(140)
+        h_norm.addWidget(self.sp_normal_range)
+
+        h_norm.addWidget(QLabel("普攻间隔(s):"))
+        self.sp_normal_cd = QDoubleSpinBox()
+        self.sp_normal_cd.setRange(0.05, 5.0)
+        self.sp_normal_cd.setSingleStep(0.05)
+        self.sp_normal_cd.setValue(0.60)
+        self.sp_normal_cd.setFixedWidth(55)
+        h_norm.addWidget(self.sp_normal_cd)
+        strat_layout.addLayout(h_norm)
+
+        # 2. 群攻配置行
+        h_aoe = QHBoxLayout()
+        h_aoe.addWidget(QLabel("群攻按键:"))
+        self.txt_aoe_key = QLineEdit("D")
+        self.txt_aoe_key.setFixedWidth(35)
+        h_aoe.addWidget(self.txt_aoe_key)
+
+        h_aoe.addWidget(QLabel("群攻距离(X):"))
+        self.sp_aoe_range = QSpinBox()
+        self.sp_aoe_range.setRange(20, 800)
+        self.sp_aoe_range.setValue(200)
+        h_aoe.addWidget(self.sp_aoe_range)
+
+        h_aoe.addWidget(QLabel("触发怪数:"))
+        self.sp_aoe_count = QSpinBox()
+        self.sp_aoe_count.setRange(1, 20)
+        self.sp_aoe_count.setValue(3)
+        self.sp_aoe_count.setFixedWidth(40)
+        h_aoe.addWidget(self.sp_aoe_count)
+
+        h_aoe.addWidget(QLabel("群攻间隔(s):"))
+        self.sp_aoe_cd = QDoubleSpinBox()
+        self.sp_aoe_cd.setRange(0.05, 5.0)
+        self.sp_aoe_cd.setSingleStep(0.05)
+        self.sp_aoe_cd.setValue(0.60)
+        self.sp_aoe_cd.setFixedWidth(55)
+        h_aoe.addWidget(self.sp_aoe_cd)
+        strat_layout.addLayout(h_aoe)
+
+        # 3. 纵向高度、防抖间隔与判定模式行
+        h_range_mode = QHBoxLayout()
+        h_range_mode.addWidget(QLabel("判定高度(Y):"))
+        self.sp_attack_range_y = QSpinBox()
+        self.sp_attack_range_y.setRange(10, 500)
+        self.sp_attack_range_y.setValue(120)
+        self.sp_attack_range_y.setFixedWidth(50)
+        h_range_mode.addWidget(self.sp_attack_range_y)
+
+        h_range_mode.addWidget(QLabel("切换间隔(s):"))
+        self.sp_state_interval = QDoubleSpinBox()
+        self.sp_state_interval.setRange(0.0, 3.0)
+        self.sp_state_interval.setSingleStep(0.05)
+        self.sp_state_interval.setValue(0.50)
+        self.sp_state_interval.setFixedWidth(55)
+        h_range_mode.addWidget(self.sp_state_interval)
+
+        h_range_mode.addWidget(QLabel("群攻方向:"))
+        self.cb_aoe_dir_mode = QComboBox()
+        self.cb_aoe_dir_mode.addItems(["单向 (单侧面朝方向)", "双向 (以玩家为中心)"])
+        self.cb_aoe_dir_mode.setCurrentText("单向 (单侧面朝方向)")
+        h_range_mode.addWidget(self.cb_aoe_dir_mode)
+        strat_layout.addLayout(h_range_mode)
+
+        # 4. 寻怪范围与跳跃按键配置行
+        h_agro_jump = QHBoxLayout()
+        h_agro_jump.addWidget(QLabel("寻怪范围(X):"))
+        self.sp_agro_dist = QSpinBox()
+        self.sp_agro_dist.setRange(50, 2000)
+        self.sp_agro_dist.setValue(500)
+        h_agro_jump.addWidget(self.sp_agro_dist)
+
+        h_agro_jump.addWidget(QLabel("跳跃按键:"))
+        self.cb_key_jump = QComboBox()
+        self.cb_key_jump.addItems(["Alt", "Space", "V", "C", "D"])
+        self.cb_key_jump.setCurrentText("Alt")
+        h_agro_jump.addWidget(self.cb_key_jump)
+        strat_layout.addLayout(h_agro_jump)
+
+        # 5. 测谎/符文图形验证弹窗自动识别报警行
+        h_captcha = QHBoxLayout()
+        self.chk_captcha_alert = QCheckBox("🚨 开启测谎/符文图形验证自动报警")
+        self.chk_captcha_alert.setChecked(True)
+        self.chk_captcha_alert.setStyleSheet("color: #FF5252; font-weight: bold;")
+        h_captcha.addWidget(self.chk_captcha_alert)
+
+        self.chk_captcha_volume = QCheckBox("🔊 报警自动调高系统音量至80%")
+        self.chk_captcha_volume.setChecked(True)
+        self.chk_captcha_volume.setStyleSheet("color: #FFA726; font-weight: bold;")
+        h_captcha.addWidget(self.chk_captcha_volume)
+
+        self.btn_test_captcha_alarm = QPushButton("🔔 报警音量测试")
+        self.btn_test_captcha_alarm.setFixedHeight(26)
+        self.btn_test_captcha_alarm.setStyleSheet("background-color: #37474F; color: #ECEFF1; font-weight: bold; padding: 2px 8px;")
+        self.btn_test_captcha_alarm.clicked.connect(self.test_captcha_alarm)
+        h_captcha.addWidget(self.btn_test_captcha_alarm)
+
+        strat_layout.addLayout(h_captcha)
+
+        # 6. 持续 Buff 技能动态列表
+        h_buff_header = QHBoxLayout()
+        h_buff_header.addWidget(QLabel("<b>✨ 持续 Buff 技能 (勾选立刻触发)</b>"))
+
+        self.btn_add_buff = QPushButton("➕ 添加持续 Buff")
+        self.btn_add_buff.clicked.connect(lambda: self.add_buff_item_row())
+        h_buff_header.addWidget(self.btn_add_buff)
+
+        self.btn_save_combat_cfg = QPushButton("💾 保存技能配置")
+        self.btn_save_combat_cfg.clicked.connect(self.save_combat_config)
+        h_buff_header.addWidget(self.btn_save_combat_cfg)
+
+        strat_layout.addLayout(h_buff_header)
+
+        self.buff_items = []
+        self.buff_scroll = QScrollArea()
+        self.buff_scroll.setWidgetResizable(True)
+        self.buff_container = QWidget()
+        self.buff_list_layout = QVBoxLayout(self.buff_container)
+        self.buff_list_layout.setContentsMargins(2, 2, 2, 2)
+        self.buff_scroll.setWidget(self.buff_container)
+        strat_layout.addWidget(self.buff_scroll, 1)
+        mid_layout.addWidget(strat_group, 1)
+
+        # 中间小地图与技能面板滚动容器
+        mid_scroll = QScrollArea()
+        mid_scroll.setWidgetResizable(True)
+        mid_scroll.setWidget(mid_panel)
+        mid_scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
+
+        # ====================== 右侧：角色状态守护与收益监控面板 (第3栏) ======================
         status_profit_group = QGroupBox("📊 角色状态守护与挂机收益看板 (Stats & Profit)")
         status_profit_layout = QVBoxLayout(status_profit_group)
 
-        # 0. 独立运行总开关 (Master Toggle)
+        # 0. 独立运行总开关 (Master Toggle) 与 Debug Overlay 选项
         h_master = QHBoxLayout()
         self.chk_status_monitor = QCheckBox("🛡️ 启用状态监控与自动喝药统计 (独立于自动打怪)")
         self.chk_status_monitor.setStyleSheet("color: #a6e3a1; font-weight: bold; font-size: 14px;")
@@ -636,6 +780,14 @@ class DetectorApp(QMainWindow):
         self.btn_reset_all_stats.clicked.connect(self.reset_all_dashboard_stats)
         h_master.addWidget(self.btn_reset_all_stats)
         status_profit_layout.addLayout(h_master)
+
+        h_overlay_cfg = QHBoxLayout()
+        self.chk_status_overlay = QCheckBox("👁️ 在左侧监控画面实时叠加显示识别 Overlay (调试HUD与槽位标注)")
+        self.chk_status_overlay.setChecked(True)
+        self.chk_status_overlay.setStyleSheet("color: #89b4fa; font-size: 12px;")
+        self.chk_status_overlay.toggled.connect(lambda c: setattr(self.status_tracker, "show_debug_overlay", c))
+        h_overlay_cfg.addWidget(self.chk_status_overlay)
+        status_profit_layout.addLayout(h_overlay_cfg)
 
         # 1. 生命守护 (HP) 行与配置
         hp_box = QGroupBox("🩸 生命保护 (HP)")
@@ -783,161 +935,28 @@ class DetectorApp(QMainWindow):
         profit_layout.addLayout(h_profit_btns)
 
         status_profit_layout.addWidget(profit_box)
+
+        # 右侧面板与其自适应 QScrollArea
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.addWidget(status_profit_group)
+        right_layout.addStretch(1)
 
-        # 右侧：战斗攻击与持续 Buff 技能配置组
-        strat_group = QGroupBox("⚔️ 战斗攻击与持续 Buff 技能配置")
-        strat_layout = QVBoxLayout(strat_group)
-
-        # 1. 普攻配置行
-        h_norm = QHBoxLayout()
-        h_norm.addWidget(QLabel("普攻按键:"))
-        self.txt_normal_key = QLineEdit("C")
-        self.txt_normal_key.setFixedWidth(35)
-        h_norm.addWidget(self.txt_normal_key)
-
-        h_norm.addWidget(QLabel("普攻距离(X):"))
-        self.sp_normal_range = QSpinBox()
-        self.sp_normal_range.setRange(20, 800)
-        self.sp_normal_range.setValue(140)
-        h_norm.addWidget(self.sp_normal_range)
-
-        h_norm.addWidget(QLabel("普攻间隔(s):"))
-        self.sp_normal_cd = QDoubleSpinBox()
-        self.sp_normal_cd.setRange(0.05, 5.0)
-        self.sp_normal_cd.setSingleStep(0.05)
-        self.sp_normal_cd.setValue(0.60)
-        self.sp_normal_cd.setFixedWidth(55)
-        h_norm.addWidget(self.sp_normal_cd)
-        strat_layout.addLayout(h_norm)
-
-        # 2. 群攻配置行
-        h_aoe = QHBoxLayout()
-        h_aoe.addWidget(QLabel("群攻按键:"))
-        self.txt_aoe_key = QLineEdit("D")
-        self.txt_aoe_key.setFixedWidth(35)
-        h_aoe.addWidget(self.txt_aoe_key)
-
-        h_aoe.addWidget(QLabel("群攻距离(X):"))
-        self.sp_aoe_range = QSpinBox()
-        self.sp_aoe_range.setRange(20, 800)
-        self.sp_aoe_range.setValue(200)
-        h_aoe.addWidget(self.sp_aoe_range)
-
-        h_aoe.addWidget(QLabel("触发怪数:"))
-        self.sp_aoe_count = QSpinBox()
-        self.sp_aoe_count.setRange(1, 20)
-        self.sp_aoe_count.setValue(3)
-        self.sp_aoe_count.setFixedWidth(40)
-        h_aoe.addWidget(self.sp_aoe_count)
-
-        h_aoe.addWidget(QLabel("群攻间隔(s):"))
-        self.sp_aoe_cd = QDoubleSpinBox()
-        self.sp_aoe_cd.setRange(0.05, 5.0)
-        self.sp_aoe_cd.setSingleStep(0.05)
-        self.sp_aoe_cd.setValue(0.60)
-        self.sp_aoe_cd.setFixedWidth(55)
-        h_aoe.addWidget(self.sp_aoe_cd)
-        strat_layout.addLayout(h_aoe)
-
-        # 3. 纵向高度、防抖间隔与判定模式行
-        h_range_mode = QHBoxLayout()
-        h_range_mode.addWidget(QLabel("判定高度(Y):"))
-        self.sp_attack_range_y = QSpinBox()
-        self.sp_attack_range_y.setRange(10, 500)
-        self.sp_attack_range_y.setValue(120)
-        self.sp_attack_range_y.setFixedWidth(50)
-        h_range_mode.addWidget(self.sp_attack_range_y)
-
-        h_range_mode.addWidget(QLabel("切换间隔(s):"))
-        self.sp_state_interval = QDoubleSpinBox()
-        self.sp_state_interval.setRange(0.0, 3.0)
-        self.sp_state_interval.setSingleStep(0.05)
-        self.sp_state_interval.setValue(0.50)
-        self.sp_state_interval.setFixedWidth(55)
-        h_range_mode.addWidget(self.sp_state_interval)
-
-        h_range_mode.addWidget(QLabel("群攻方向:"))
-        self.cb_aoe_dir_mode = QComboBox()
-        self.cb_aoe_dir_mode.addItems(["单向 (单侧面朝方向)", "双向 (以玩家为中心)"])
-        self.cb_aoe_dir_mode.setCurrentText("单向 (单侧面朝方向)")
-        h_range_mode.addWidget(self.cb_aoe_dir_mode)
-        strat_layout.addLayout(h_range_mode)
-
-        # 4. 寻怪范围与跳跃按键配置行
-        h_agro_jump = QHBoxLayout()
-        h_agro_jump.addWidget(QLabel("寻怪范围(X):"))
-        self.sp_agro_dist = QSpinBox()
-        self.sp_agro_dist.setRange(50, 2000)
-        self.sp_agro_dist.setValue(500)
-        h_agro_jump.addWidget(self.sp_agro_dist)
-
-        h_agro_jump.addWidget(QLabel("跳跃按键:"))
-        self.cb_key_jump = QComboBox()
-        self.cb_key_jump.addItems(["Alt", "Space", "V", "C", "D"])
-        self.cb_key_jump.setCurrentText("Alt")
-        h_agro_jump.addWidget(self.cb_key_jump)
-        strat_layout.addLayout(h_agro_jump)
-
-        # 5. 测谎/符文图形验证弹窗自动识别报警行
-        h_captcha = QHBoxLayout()
-        self.chk_captcha_alert = QCheckBox("🚨 开启测谎/符文图形验证自动报警")
-        self.chk_captcha_alert.setChecked(True)
-        self.chk_captcha_alert.setStyleSheet("color: #FF5252; font-weight: bold;")
-        h_captcha.addWidget(self.chk_captcha_alert)
-
-        self.chk_captcha_volume = QCheckBox("🔊 报警自动调高系统音量至80%")
-        self.chk_captcha_volume.setChecked(True)
-        self.chk_captcha_volume.setStyleSheet("color: #FFA726; font-weight: bold;")
-        h_captcha.addWidget(self.chk_captcha_volume)
-
-        self.btn_test_captcha_alarm = QPushButton("🔔 报警音量测试")
-        self.btn_test_captcha_alarm.setFixedHeight(26)
-        self.btn_test_captcha_alarm.setStyleSheet("background-color: #37474F; color: #ECEFF1; font-weight: bold; padding: 2px 8px;")
-        self.btn_test_captcha_alarm.clicked.connect(self.test_captcha_alarm)
-        h_captcha.addWidget(self.btn_test_captcha_alarm)
-
-        strat_layout.addLayout(h_captcha)
-
-        # 6. 持续 Buff 技能动态列表
-        h_buff_header = QHBoxLayout()
-        h_buff_header.addWidget(QLabel("<b>✨ 持续 Buff 技能 (勾选立刻触发)</b>"))
-
-        self.btn_add_buff = QPushButton("➕ 添加持续 Buff")
-        self.btn_add_buff.clicked.connect(lambda: self.add_buff_item_row())
-        h_buff_header.addWidget(self.btn_add_buff)
-
-        self.btn_save_combat_cfg = QPushButton("💾 保存技能配置")
-        self.btn_save_combat_cfg.clicked.connect(self.save_combat_config)
-        h_buff_header.addWidget(self.btn_save_combat_cfg)
-
-        strat_layout.addLayout(h_buff_header)
-
-        self.buff_items = []
-        self.buff_scroll = QScrollArea()
-        self.buff_scroll.setWidgetResizable(True)
-        self.buff_container = QWidget()
-        self.buff_list_layout = QVBoxLayout(self.buff_container)
-        self.buff_list_layout.setContentsMargins(2, 2, 2, 2)
-        self.buff_scroll.setWidget(self.buff_container)
-        strat_layout.addWidget(self.buff_scroll, 1)
-
-        # 载入或初始化默认 Buff 项与地图列表
-        self.load_combat_config()
-        self.refresh_map_xml_list()
-
-        right_layout.addWidget(strat_group, 1)
-
-        # 将右侧控制看板放入自适应 QScrollArea，确保随着配置增多永远自适应排版、不被裁切
         right_scroll = QScrollArea()
         right_scroll.setWidgetResizable(True)
         right_scroll.setWidget(right_panel)
         right_scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
 
-        # Splitter 分割
+        # 载入或初始化默认 Buff 项与地图列表配置
+        self.load_combat_config()
+        self.refresh_map_xml_list()
+
+        # Splitter 3 栏水平响应式分割面板 (左:主画面 | 中:小地图与战斗 | 右:状态守护与收益)
         splitter.addWidget(left_panel)
+        splitter.addWidget(mid_scroll)
         splitter.addWidget(right_scroll)
-        splitter.setSizes([740, 780])
+        splitter.setSizes([660, 540, 480])
         main_layout.addWidget(splitter, 1)
 
         # 底部状态栏
@@ -1917,24 +1936,31 @@ class DetectorApp(QMainWindow):
                         cv2.putText(game_frame, f"CAPTCHA ALERT [{score:.2f}]", (cx, max(20, cy - 8)),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-        # 2.8 角色生命/魔法/经验状态更新与自动喝药守护 (独立于打怪开关)
-        if hasattr(self, 'status_tracker') and self.status_tracker.enabled:
+        # 2.8 角色生命/魔法/经验状态更新与自动喝药守护 (被动识别每帧高频运行，喝药动作由独立总开关控制)
+        if hasattr(self, 'status_tracker'):
             hp_pct, mp_pct, exp_pct = self.status_tracker.update_hp_mp_exp(game_frame)
             
-            # 自动喝药执行
-            potion_msgs = self.status_tracker.check_and_drink_potions()
-            if potion_msgs:
-                for pmsg in potion_msgs:
-                    self.log(f"🩸 {pmsg}")
-                self._update_profit_ui()
+            # 自动喝药执行 (仅在用户勾选总开关时触发)
+            if self.status_tracker.enabled:
+                potion_msgs = self.status_tracker.check_and_drink_potions()
+                if potion_msgs:
+                    for pmsg in potion_msgs:
+                        self.log(f"🩸 {pmsg}")
+                    self._update_profit_ui()
 
-            # 刷新 UI 进度条与数据
-            self.bar_hp.setValue(int(hp_pct))
-            self.bar_hp.setFormat(f"HP: {hp_pct:.1f}%")
-            self.bar_mp.setValue(int(mp_pct))
-            self.bar_mp.setFormat(f"MP: {mp_pct:.1f}%")
-            self.bar_exp.setValue(int(exp_pct))
-            self.bar_exp.setFormat(f"EXP: {exp_pct:.2f}%")
+            # 刷新 UI 进度条与数据 (被动实时显示)
+            if self.status_tracker.is_anchor_locked:
+                self.bar_hp.setValue(int(hp_pct))
+                self.bar_hp.setFormat(f"HP: {hp_pct:.1f}%")
+                self.bar_mp.setValue(int(mp_pct))
+                self.bar_mp.setFormat(f"MP: {mp_pct:.1f}%")
+                self.bar_exp.setValue(int(exp_pct))
+                self.bar_exp.setFormat(f"EXP: {exp_pct:.2f}%")
+            else:
+                conf_val = getattr(self.status_tracker, 'last_status_conf', 0.0)
+                self.bar_hp.setFormat(f"HP: 未锁定状态条 ({conf_val:.2f})")
+                self.bar_mp.setFormat(f"MP: 未锁定状态条 ({conf_val:.2f})")
+                self.bar_exp.setFormat(f"EXP: 未锁定状态条")
 
             gained = self.status_tracker.gained_exp_pct
             rate = self.status_tracker.exp_per_hour
@@ -2080,6 +2106,10 @@ class DetectorApp(QMainWindow):
 
         # 5. 主画面渲染
         if self.is_monitoring_preview:
+            # 实时绘制状态守护与挂机收益 Debug Overlay (HUD仪表盘 + 状态条/快捷栏/金币ROI高亮)
+            if hasattr(self, 'status_tracker'):
+                self.status_tracker.draw_debug_overlay(game_frame)
+
             h, w, ch = game_frame.shape
             bytes_per_line = ch * w
             rgb_frame = cv2.cvtColor(game_frame, cv2.COLOR_BGR2RGB)
