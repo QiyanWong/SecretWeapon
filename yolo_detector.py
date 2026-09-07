@@ -767,13 +767,19 @@ class DetectorApp(QMainWindow):
         status_profit_group = QGroupBox("📊 角色状态守护与挂机收益看板 (Stats & Profit)")
         status_profit_layout = QVBoxLayout(status_profit_group)
 
-        # 0. 独立运行总开关 (Master Toggle) 与 Debug Overlay 选项
+        # 0. 独立运行开关：自动喝药守护 与 药水金币收益统计 完全解耦
         h_master = QHBoxLayout()
-        self.chk_status_monitor = QCheckBox("🛡️ 启用状态监控与自动喝药统计 (独立于自动打怪)")
-        self.chk_status_monitor.setStyleSheet("color: #a6e3a1; font-weight: bold; font-size: 14px;")
-        self.chk_status_monitor.setToolTip("勾选后立刻启动血蓝守护与收益统计；即便不开启自动打怪，只要掉血依然会自动喝药！")
-        self.chk_status_monitor.toggled.connect(self.on_status_monitor_toggled)
-        h_master.addWidget(self.chk_status_monitor)
+        self.chk_auto_potion = QCheckBox("🩸 启用自动喝药守护 (按百分比自动喝血/蓝)")
+        self.chk_auto_potion.setStyleSheet("color: #ff7b72; font-weight: bold; font-size: 13px;")
+        self.chk_auto_potion.setToolTip("低于设置的血蓝阈值时自动调用键盘喝药。独立于自动打怪和收益统计。")
+        self.chk_auto_potion.toggled.connect(self.on_auto_potion_toggled)
+        h_master.addWidget(self.chk_auto_potion)
+
+        self.chk_profit_tracker = QCheckBox("💎 启用药水与金币收益统计 (实时测算消耗与时薪)")
+        self.chk_profit_tracker.setStyleSheet("color: #a6e3a1; font-weight: bold; font-size: 13px;")
+        self.chk_profit_tracker.setToolTip("视觉读取快捷栏药水堆叠数与背包金币数，实时统计消耗瓶数与净利润。独立于自动打怪与自动喝药。")
+        self.chk_profit_tracker.toggled.connect(self.on_profit_tracker_toggled)
+        h_master.addWidget(self.chk_profit_tracker)
 
         self.btn_reset_all_stats = QPushButton("🔄 一键全部重置")
         self.btn_reset_all_stats.setStyleSheet("background-color: #45475a; color: #fab387; font-weight: bold;")
@@ -965,13 +971,26 @@ class DetectorApp(QMainWindow):
         self.lbl_status.setStyleSheet("color: #a6e3a1;")
         main_layout.addWidget(self.lbl_status)
 
-    def on_status_monitor_toggled(self, checked):
-        """状态监控与自动喝药独立总开关"""
-        self.status_tracker.enabled = checked
+    def on_auto_potion_toggled(self, checked):
+        """自动喝药独立开关"""
+        self.status_tracker.auto_potion_enabled = checked
         if checked:
-            self.log("🛡️ 【状态守护】已启用生命与魔法自动喝药守护及挂机收益监控 (独立运行)")
+            self.log("🩸 【自动喝药】已启用生命与魔法自动喝药守护 (独立运行)")
         else:
-            self.log("🛡️ 【状态守护】已停止生命监控与自动喝药")
+            self.log("🩸 【自动喝药】已停止自动喝药动作")
+
+    def on_profit_tracker_toggled(self, checked):
+        """药水与金币收益统计独立开关"""
+        self.status_tracker.profit_tracker_enabled = checked
+        if checked:
+            self.log("💎 【收益统计】已启用快捷栏药水与背包金币收益实时统计 (独立运行)")
+        else:
+            self.log("💎 【收益统计】已暂停药水与金币收益统计")
+
+    def on_status_monitor_toggled(self, checked):
+        """向下兼容总开关"""
+        self.on_auto_potion_toggled(checked)
+        self.on_profit_tracker_toggled(checked)
 
     def reset_exp_stats_ui(self):
         """重置经验统计并更新界面"""
@@ -1023,13 +1042,26 @@ class DetectorApp(QMainWindow):
         """刷新药水与金币利润显示"""
         hp_used = self.status_tracker.used_hp_potions
         mp_used = self.status_tracker.used_mp_potions
+        hp_cur = self.status_tracker.current_hp_count
+        mp_cur = self.status_tracker.current_mp_count
         cost = self.status_tracker.get_potion_cost()
         gained_meso = self.status_tracker.gained_meso
         profit = self.status_tracker.get_net_profit()
         meso_rate = self.status_tracker.meso_per_hour
 
+        # 同步更新金币 SpinBox 数值显示 (若未在人工编辑)
+        if hasattr(self, 'sp_initial_meso') and self.status_tracker.initial_meso is not None:
+            self.sp_initial_meso.blockSignals(True)
+            self.sp_initial_meso.setValue(int(self.status_tracker.initial_meso))
+            self.sp_initial_meso.blockSignals(False)
+
+        if hasattr(self, 'sp_current_meso'):
+            self.sp_current_meso.blockSignals(True)
+            self.sp_current_meso.setValue(int(self.status_tracker.current_meso))
+            self.sp_current_meso.blockSignals(False)
+
         self.lbl_potion_consumed.setText(
-            f"💊 消耗统计: HP白药水 {hp_used} 瓶 | MP蓝药水 {mp_used} 瓶 (总成本: {cost:,} 金币)"
+            f"💊 消耗统计: HP白药水 {hp_used} 瓶 (余 {hp_cur}) | MP蓝药水 {mp_used} 瓶 (余 {mp_cur}) (总成本: {cost:,} 金币)"
         )
         profit_color = "#a6e3a1" if profit >= 0 else "#f38ba8"
         self.lbl_meso_profit.setStyleSheet(f"color: {profit_color}; font-weight: bold;")
@@ -1199,7 +1231,12 @@ class DetectorApp(QMainWindow):
             self.status_tracker.inventory_meso_roi = (x, y, w, h)
             if hasattr(self, 'lbl_meso_roi_info'):
                 self.lbl_meso_roi_info.setText(f"X={x}, Y={y}, W={w}, H={h}")
-            self.log(f"🎯 【背包金币区域对齐成功】已成功框选金币区域: Left={x}, Top={y}, Width={w}, Height={h}")
+            self.log(f"🎯 【背包金币区域对齐成功】已成功框选金币区域: Left={x}, Top={y}, Width={w}, Height={h}。一旦金币数字进入该区域将立即作为起始金币并实时统计增量！")
+            # 框选后重置初始状态，下次读取立即直接设为起始金币
+            self.status_tracker.initial_meso = None
+            self.status_tracker.current_meso = 0
+            self.status_tracker.gained_meso = 0
+            self.status_tracker.last_meso_parse_time = 0.0
             self.roi_target_mode = "minimap"
         else:
             self.minimap_tracker.set_crop_box(x, y, w, h)
@@ -1530,6 +1567,8 @@ class DetectorApp(QMainWindow):
                 "mp_threshold": self.sp_mp_thresh.value(),
                 "mp_key": self.txt_mp_key.text().strip(),
                 "mp_potion_price": self.sp_mp_price.value(),
+                "auto_potion_enabled": self.chk_auto_potion.isChecked(),
+                "profit_tracker_enabled": self.chk_profit_tracker.isChecked(),
                 "inventory_meso_roi": list(self.status_tracker.inventory_meso_roi) if self.status_tracker.inventory_meso_roi else None,
                 "initial_meso": self.sp_initial_meso.value(),
                 "current_meso": self.sp_current_meso.value(),
@@ -1607,6 +1646,10 @@ class DetectorApp(QMainWindow):
                 self.txt_mp_key.setText(cfg["mp_key"])
             if "mp_potion_price" in cfg:
                 self.sp_mp_price.setValue(int(cfg["mp_potion_price"]))
+            if "auto_potion_enabled" in cfg and hasattr(self, 'chk_auto_potion'):
+                self.chk_auto_potion.setChecked(bool(cfg["auto_potion_enabled"]))
+            if "profit_tracker_enabled" in cfg and hasattr(self, 'chk_profit_tracker'):
+                self.chk_profit_tracker.setChecked(bool(cfg["profit_tracker_enabled"]))
             if "inventory_meso_roi" in cfg and cfg["inventory_meso_roi"]:
                 self.status_tracker.inventory_meso_roi = tuple(cfg["inventory_meso_roi"])
                 if hasattr(self, 'lbl_meso_roi_info'):
@@ -1936,12 +1979,17 @@ class DetectorApp(QMainWindow):
                         cv2.putText(game_frame, f"CAPTCHA ALERT [{score:.2f}]", (cx, max(20, cy - 8)),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-        # 2.8 角色生命/魔法/经验状态更新与自动喝药守护 (被动识别每帧高频运行，喝药动作由独立总开关控制)
+        # 2.8 角色生命/魔法/经验状态更新与自动喝药守护 (被动识别每帧高频运行)
         if hasattr(self, 'status_tracker'):
             hp_pct, mp_pct, exp_pct = self.status_tracker.update_hp_mp_exp(game_frame)
             
-            # 自动喝药执行 (仅在用户勾选总开关时触发)
-            if self.status_tracker.enabled:
+            # 药水与金币收益统计 (由独立收益开关控制)
+            if self.status_tracker.profit_tracker_enabled:
+                self.status_tracker.update_quickslot_potions(game_frame)
+                self.status_tracker.update_inventory_meso(game_frame)
+
+            # 自动喝药执行 (仅在用户勾选自动喝药开关时触发)
+            if self.status_tracker.auto_potion_enabled:
                 potion_msgs = self.status_tracker.check_and_drink_potions()
                 if potion_msgs:
                     for pmsg in potion_msgs:

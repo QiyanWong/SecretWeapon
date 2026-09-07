@@ -10,6 +10,7 @@ player_status_tracker.py - 角色状态、生命守护与收益统计引擎
 """
 
 import os
+import re
 import time
 import cv2
 import numpy as np
@@ -21,8 +22,14 @@ class PlayerStatusTracker:
     def __init__(self, game_controller=None):
         self.game_controller = game_controller
 
-        # 状态总开关与打怪解耦
-        self.enabled = False
+        # 状态守护与收益统计功能解耦，可独立开启/关闭
+        self.auto_potion_enabled = False
+        self.profit_tracker_enabled = False
+
+        # 金币 OCR 识别与扫描频率控制
+        self._ocr_instance = None
+        self.last_meso_parse_time = 0.0
+        self.meso_parse_interval = 0.5
 
         # HP 喝药配置
         self.hp_threshold = 70.0      # 默认低于 70% 喝血
@@ -86,6 +93,12 @@ class PlayerStatusTracker:
         # 加载匹配模板 (支持优先从 dataset/assets 读取)
         self.tmpl_hp = self._load_template("hp_icon.png")
         self.tmpl_quickslot = self._load_template("quickslot_tmpl.png")
+        self.digit_templates = self._load_digit_templates()
+
+        self.last_quickslot_parse_time = 0.0
+        self.quickslot_parse_interval = 0.3
+        self.zero_hp_count_streak = 0
+        self.zero_mp_count_streak = 0
 
     def _load_template(self, filename):
         candidates = [
@@ -99,6 +112,26 @@ class PlayerStatusTracker:
                 if im is not None:
                     return im
         return None
+
+    def _load_digit_templates(self):
+        digits = {}
+        digits_dir = os.path.join(BASE_DIR, "dataset", "assets", "digits")
+        if os.path.exists(digits_dir):
+            for i in range(10):
+                p = os.path.join(digits_dir, f"{i}.png")
+                if os.path.exists(p):
+                    im = cv2.imread(p)
+                    if im is not None:
+                        digits[i] = im
+        return digits
+
+    @property
+    def enabled(self):
+        return self.auto_potion_enabled
+
+    @enabled.setter
+    def enabled(self, val):
+        self.auto_potion_enabled = bool(val)
 
     # ========================== 独立重置接口 ==========================
     def reset_exp_stats(self):
@@ -251,6 +284,147 @@ class PlayerStatusTracker:
 
         return self.current_hp_pct, self.current_mp_pct, self.current_exp_pct
 
+    # ========================== 快捷栏药水视觉精准识别与消耗统计 ==========================
+    def read_slot_number(self, slot_bgr):
+        """
+        利用 dataset/assets/digits/ 预载的 11px 像素级模板匹配快速解析药水堆叠数量。
+        """
+        if slot_bgr is None or not self.digit_templates:
+            return 0
+        h, w = slot_bgr.shape[:2]
+        # 截取槽位右下角的数字区域 (一般在 y: 25~55, x: 2~52)
+        sub = slot_bgr[25:min(55, h), 2:min(52, w)]
+        if sub.shape[0] < 11 or sub.shape[1] < 7:
+            return 0
+
+        matches = []
+        for d, tmpl in self.digit_templates.items():
+            th, tw = tmpl.shape[:2]
+            if sub.shape[0] < th or sub.shape[1] < tw:
+                continue
+            res = cv2.matchTemplate(sub, tmpl, cv2.TM_CCOEFF_NORMED)
+            loc = np.where(res >= 0.70)
+            for pt in zip(*loc[::-1]):
+                matches.append((pt[0], d, float(res[pt[1], pt[0]]), tw))
+
+        if not matches:
+            return 0
+
+        # 按 X 坐标排序
+        matches.sort(key=lambda m: m[0])
+
+        # 水平轴 NMS 抑制
+        filtered = []
+        for m in matches:
+            x, d, score, tw = m
+            overlap = False
+            for idx, ex in enumerate(filtered):
+                if abs(ex[0] - x) <= 6:
+                    overlap = True
+                    if score > ex[2]:
+                        filtered[idx] = m
+                    break
+            if not overlap:
+                filtered.append(m)
+
+        filtered.sort(key=lambda m: m[0])
+        if not filtered:
+            return 0
+
+        try:
+            return int(''.join(str(m[1]) for m in filtered))
+        except ValueError:
+            return 0
+
+    def update_quickslot_potions(self, frame_bgr):
+        """
+        视觉识别快捷栏中的药水真实余量并计算消耗
+        """
+        if frame_bgr is None:
+            return self.current_hp_count, self.current_mp_count
+
+        now = time.time()
+        if (now - self.last_quickslot_parse_time) < self.quickslot_parse_interval:
+            return self.current_hp_count, self.current_mp_count
+        self.last_quickslot_parse_time = now
+
+        # 定位快捷栏
+        if self.quickslot_anchor is None or (now - self.last_quickslot_search_time > 3.0):
+            self.locate_quickslot(frame_bgr)
+            self.last_quickslot_search_time = now
+
+        if self.quickslot_anchor is None:
+            return self.current_hp_count, self.current_mp_count
+
+        qx, qy = self.quickslot_anchor
+        h, w = frame_bgr.shape[:2]
+
+        # 1. 提取 Del 键 (HP 药水槽)
+        if self.quickslot_hp_roi is not None:
+            rx, ry, rw, rh = self.quickslot_hp_roi
+            del_slot = frame_bgr[ry : ry + rh, rx : rx + rw]
+        else:
+            dy1, dy2 = qy + 75, qy + 135
+            dx1, dx2 = qx + 40, qx + 95
+            if 0 <= dy1 < dy2 <= h and 0 <= dx1 < dx2 <= w:
+                del_slot = frame_bgr[dy1:dy2, dx1:dx2]
+            else:
+                del_slot = None
+
+        # 2. 提取 End 键 (MP 药水槽)
+        if self.quickslot_mp_roi is not None:
+            rx, ry, rw, rh = self.quickslot_mp_roi
+            end_slot = frame_bgr[ry : ry + rh, rx : rx + rw]
+        else:
+            ey1, ey2 = qy + 75, qy + 135
+            ex1, ex2 = qx + 95, qx + 150
+            if 0 <= ey1 < ey2 <= h and 0 <= ex1 < ex2 <= w:
+                end_slot = frame_bgr[ey1:ey2, ex1:ex2]
+            else:
+                end_slot = None
+
+        # 3. 识别 HP 药水数量
+        if del_slot is not None:
+            hp_val = self.read_slot_number(del_slot)
+            if hp_val > 0:
+                self.zero_hp_count_streak = 0
+                if self.initial_hp_count is None:
+                    self.initial_hp_count = hp_val
+                    self.current_hp_count = hp_val
+                else:
+                    # 补药检测 (如买药、捡药导致数量上升)
+                    if hp_val > self.current_hp_count:
+                        self.initial_hp_count += (hp_val - self.current_hp_count)
+                    self.current_hp_count = hp_val
+                self.used_hp_potions = max(0, self.initial_hp_count - self.current_hp_count)
+            else:
+                self.zero_hp_count_streak += 1
+                if self.zero_hp_count_streak >= 5 and self.initial_hp_count is not None:
+                    self.current_hp_count = 0
+                    self.used_hp_potions = self.initial_hp_count
+
+        # 4. 识别 MP 药水数量
+        if end_slot is not None:
+            mp_val = self.read_slot_number(end_slot)
+            if mp_val > 0:
+                self.zero_mp_count_streak = 0
+                if self.initial_mp_count is None:
+                    self.initial_mp_count = mp_val
+                    self.current_mp_count = mp_val
+                else:
+                    # 补药检测
+                    if mp_val > self.current_mp_count:
+                        self.initial_mp_count += (mp_val - self.current_mp_count)
+                    self.current_mp_count = mp_val
+                self.used_mp_potions = max(0, self.initial_mp_count - self.current_mp_count)
+            else:
+                self.zero_mp_count_streak += 1
+                if self.zero_mp_count_streak >= 5 and self.initial_mp_count is not None:
+                    self.current_mp_count = 0
+                    self.used_mp_potions = self.initial_mp_count
+
+        return self.current_hp_count, self.current_mp_count
+
     # ========================== 实时可视化 Debug Overlay ==========================
     def draw_debug_overlay(self, frame_bgr):
         """
@@ -271,26 +445,27 @@ class PlayerStatusTracker:
             cv2.addWeighted(overlay, 0.78, hud_roi, 0.22, 0, hud_roi)
             cv2.rectangle(frame_bgr, (hud_x, hud_y), (hud_x + hud_w, hud_y + hud_h), (80, 80, 120), 1)
 
-            mode_str = "ACTIVE (Drink ON)" if self.enabled else "MONITORING (Drink OFF)"
-            mode_color = (120, 255, 120) if self.enabled else (100, 220, 255)
+            mode_pot = "Auto-Drink: ON" if self.auto_potion_enabled else "Auto-Drink: OFF"
+            mode_prof = "Profit: ON" if self.profit_tracker_enabled else "Profit: OFF"
+            mode_color = (120, 255, 120) if (self.auto_potion_enabled or self.profit_tracker_enabled) else (100, 220, 255)
 
             lock_str = f"LOCKED ({self.last_status_conf:.2f})" if self.is_anchor_locked else f"LOST ({self.last_status_conf:.2f})"
             lock_color = (100, 255, 100) if self.is_anchor_locked else (80, 80, 255)
 
             cv2.putText(frame_bgr, "STATUS MONITOR HUD (DEBUG)", (hud_x + 10, hud_y + 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 220), 2)
-            cv2.putText(frame_bgr, f"Mode: {mode_str}", (hud_x + 10, hud_y + 42),
+            cv2.putText(frame_bgr, f"{mode_pot} | {mode_prof}", (hud_x + 10, hud_y + 42),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.42, mode_color, 1)
             cv2.putText(frame_bgr, f"Status Bar: {lock_str}", (hud_x + 235, hud_y + 42),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.42, lock_color, 1)
 
-            cv2.putText(frame_bgr, f"HP: {self.current_hp_pct:.1f}% (Thresh<={int(self.hp_threshold)}%, Key:{self.hp_key})",
+            cv2.putText(frame_bgr, f"HP: {self.current_hp_pct:.1f}% | Del: {self.current_hp_count} (Used: {self.used_hp_potions})",
                         (hud_x + 10, hud_y + 64), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (100, 100, 255), 1)
-            cv2.putText(frame_bgr, f"MP: {self.current_mp_pct:.1f}% (Thresh<={int(self.mp_threshold)}%, Key:{self.mp_key})",
+            cv2.putText(frame_bgr, f"MP: {self.current_mp_pct:.1f}% | End: {self.current_mp_count} (Used: {self.used_mp_potions})",
                         (hud_x + 10, hud_y + 84), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 180, 50), 1)
 
             meso_roi_str = f"X={self.inventory_meso_roi[0]},Y={self.inventory_meso_roi[1]}" if self.inventory_meso_roi else "Not Selected"
-            cv2.putText(frame_bgr, f"EXP: {self.current_exp_pct:.2f}% (+{self.gained_exp_pct:.2f}%) | Meso ROI: {meso_roi_str}",
+            cv2.putText(frame_bgr, f"EXP: {self.current_exp_pct:.2f}% (+{self.gained_exp_pct:.2f}%) | Meso: {self.current_meso:,}",
                         (hud_x + 10, hud_y + 106), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (180, 220, 255), 1)
 
         # 2. 状态栏标注 (若锁定则绘制各条框选，若未锁定则绘制告警横幅)
@@ -335,29 +510,30 @@ class PlayerStatusTracker:
                         (qx - 15, max(20, qy - 15)), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 220, 100), 2)
 
             # Del (血药槽) 框选
-            cv2.rectangle(frame_bgr, (qx + 35, qy + 45), (qx + 85, qy + 95), (0, 165, 255), 1)
-            cv2.putText(frame_bgr, "Del[HP]", (qx + 35, qy + 40),
+            cv2.rectangle(frame_bgr, (qx + 40, qy + 75), (qx + 95, qy + 135), (0, 165, 255), 2)
+            cv2.putText(frame_bgr, f"Del: {self.current_hp_count} (Used:{self.used_hp_potions})", (qx + 20, max(20, qy + 70)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 165, 255), 1)
 
             # End (蓝药槽) 框选
-            cv2.rectangle(frame_bgr, (qx + 88, qy + 45), (qx + 138, qy + 95), (255, 200, 0), 1)
-            cv2.putText(frame_bgr, "End[MP]", (qx + 88, qy + 40),
+            cv2.rectangle(frame_bgr, (qx + 95, qy + 75), (qx + 150, qy + 135), (255, 200, 0), 2)
+            cv2.putText(frame_bgr, f"End: {self.current_mp_count} (Used:{self.used_mp_potions})", (qx + 95, max(20, qy + 70)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 200, 0), 1)
 
         # 4. 背包金币区域 ROI 标注 (若用户已框选)
         if self.inventory_meso_roi is not None:
             mx, my, mw, mh = self.inventory_meso_roi
             cv2.rectangle(frame_bgr, (mx, my), (mx + mw, my + mh), (0, 215, 255), 2)
-            cv2.putText(frame_bgr, f"MESO ROI [{self.current_meso:,}]",
+            init_str = f"{self.initial_meso:,}" if self.initial_meso is not None else "None"
+            cv2.putText(frame_bgr, f"MESO: {self.current_meso:,} (+{self.gained_meso:,}) [Init:{init_str}]",
                         (mx, max(20, my - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 215, 255), 2)
 
     # ========================== 自动补血/补蓝执行器 ==========================
     def check_and_drink_potions(self):
         """
         在 process_loop 中每帧高频调用。
-        只有在 self.enabled == True 时才触发按键，独立于自动打怪。
+        只有在 self.auto_potion_enabled == True 时才触发按键，独立于自动打怪与收益统计。
         """
-        if not self.enabled or self.game_controller is None:
+        if not self.auto_potion_enabled or self.game_controller is None:
             return None
 
         now = time.time()
@@ -368,16 +544,14 @@ class PlayerStatusTracker:
             if (now - self.last_hp_pot_time) >= self.hp_cd:
                 self.last_hp_pot_time = now
                 self._send_key(self.hp_key)
-                self.used_hp_potions += 1
-                triggered.append(f"HP {self.current_hp_pct:.1f}% <= {self.hp_threshold}% 喝血[{self.hp_key}]")
+                triggered.append(f"HP {self.current_hp_pct:.1f}% <= {self.hp_threshold}% 喝血[{self.hp_key}] (余量: {self.current_hp_count})")
 
         # 2. 检查 MP 保护
         if self.current_mp_pct <= self.mp_threshold:
             if (now - self.last_mp_pot_time) >= self.mp_cd:
                 self.last_mp_pot_time = now
                 self._send_key(self.mp_key)
-                self.used_mp_potions += 1
-                triggered.append(f"MP {self.current_mp_pct:.1f}% <= {self.mp_threshold}% 喝蓝[{self.mp_key}]")
+                triggered.append(f"MP {self.current_mp_pct:.1f}% <= {self.mp_threshold}% 喝蓝[{self.mp_key}] (余量: {self.current_mp_count})")
 
         return triggered if triggered else None
 
@@ -402,7 +576,89 @@ class PlayerStatusTracker:
         mapped_key = key_map.get(key.lower(), key)
         self.game_controller.tap_key(mapped_key)
 
-    # ========================== 金币与净利润核算 ==========================
+    # ========================== 金币视觉识别与净利润核算 ==========================
+    def _get_ocr(self):
+        if self._ocr_instance is None:
+            try:
+                import ddddocr
+                self._ocr_instance = ddddocr.DdddOcr(show_ad=False)
+            except Exception:
+                self._ocr_instance = False
+        return self._ocr_instance if self._ocr_instance is not False else None
+
+    def read_meso_number(self, crop_bgr):
+        """
+        识别背包金币区域数字，支持通用 OCR 及清洗过滤
+        """
+        if crop_bgr is None or crop_bgr.size == 0:
+            return None
+
+        ocr = self._get_ocr()
+        if ocr is not None:
+            try:
+                # 尝试原图识别
+                _, buf = cv2.imencode('.png', crop_bgr)
+                raw_txt = ocr.classification(buf.tobytes())
+                digits = re.sub(r'\D', '', raw_txt)
+                if digits:
+                    return int(digits)
+
+                # 尝试 2x 缩放识别
+                scaled = cv2.resize(crop_bgr, (0, 0), fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+                _, buf2 = cv2.imencode('.png', scaled)
+                raw_txt2 = ocr.classification(buf2.tobytes())
+                digits2 = re.sub(r'\D', '', raw_txt2)
+                if digits2:
+                    return int(digits2)
+            except Exception:
+                pass
+
+        # 备选：点阵模板匹配提取
+        fallback_val = self.read_slot_number(crop_bgr)
+        return fallback_val if fallback_val > 0 else None
+
+    def update_inventory_meso(self, frame_bgr):
+        """
+        视觉识别背包金币区域 (inventory_meso_roi) 内的金币数字
+        只要有金币数字进入区域内就读取；
+        如果起始金币为 None 或 0，直接设置为起始金币，然后实时更新当前金币与金币效率。
+        """
+        if frame_bgr is None or self.inventory_meso_roi is None:
+            return self.current_meso
+
+        now = time.time()
+        if (now - self.last_meso_parse_time) < self.meso_parse_interval:
+            return self.current_meso
+        self.last_meso_parse_time = now
+
+        mx, my, mw, mh = self.inventory_meso_roi
+        h, w = frame_bgr.shape[:2]
+
+        # 边界保护
+        y1, y2 = max(0, my), min(h, my + mh)
+        x1, x2 = max(0, mx), min(w, mx + mw)
+        if (y2 - y1) < 8 or (x2 - x1) < 10:
+            return self.current_meso
+
+        meso_crop = frame_bgr[y1:y2, x1:x2]
+        detected_val = self.read_meso_number(meso_crop)
+
+        if detected_val is not None:
+            self.current_meso = detected_val
+
+            # 如果起始金币为 None 或 0，那么直接设置为起始的金币
+            if self.initial_meso is None or self.initial_meso == 0:
+                self.initial_meso = detected_val
+                self.gained_meso = 0
+                self.meso_start_time = now
+                self.meso_per_hour = 0.0
+            else:
+                self.gained_meso = max(0, self.current_meso - self.initial_meso)
+                elapsed_h = max(0.001, (now - self.meso_start_time) / 3600.0)
+                self.meso_per_hour = self.gained_meso / elapsed_h
+
+        return self.current_meso
+
     def update_meso_amount(self, current_meso):
         """供金币识别后更新数值"""
         self.current_meso = current_meso
