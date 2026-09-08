@@ -28,11 +28,13 @@ CLSCTX_ALL = 23
 eRender = 0
 eMultimedia = 1
 
-def boost_system_volume(min_level_percent=80):
+import json
+from datetime import datetime
+
+def get_system_volume():
     """
-    通过 Windows 原生 Core Audio COM 接口将系统主音量调高至指定百分比 (默认 80%)，
-    并自动解除静音状态。无需依赖任何第三方库，纳秒级响应。
-    返回: (success: bool, old_vol: float, new_vol: float)
+    通过 Windows 原生 Core Audio COM 接口获取系统主音量标量 (0.0 ~ 1.0)。
+    失败返回 None。
     """
     co_initialized = False
     try:
@@ -52,7 +54,7 @@ def boost_system_volume(min_level_percent=80):
             byref(enumerator)
         )
         if hr != 0 or not enumerator:
-            return False, 0.0, 0.0
+            return None
 
         enum_vtbl = ctypes.cast(ctypes.cast(enumerator, POINTER(c_void_p)).contents, POINTER(c_void_p))
         GetDefaultAudioEndpoint_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, c_uint32, c_uint32, POINTER(c_void_p))
@@ -63,7 +65,7 @@ def boost_system_volume(min_level_percent=80):
         hr = GetDefaultAudioEndpoint(enumerator, eRender, eMultimedia, byref(device))
         if hr != 0 or not device:
             Release_proto(enum_vtbl[2])(enumerator)
-            return False, 0.0, 0.0
+            return None
 
         dev_vtbl = ctypes.cast(ctypes.cast(device, POINTER(c_void_p)).contents, POINTER(c_void_p))
         Activate_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, POINTER(_GUID), wintypes.DWORD, c_void_p, POINTER(c_void_p))
@@ -74,42 +76,122 @@ def boost_system_volume(min_level_percent=80):
         if hr != 0 or not endpoint_volume:
             Release_proto(dev_vtbl[2])(device)
             Release_proto(enum_vtbl[2])(enumerator)
-            return False, 0.0, 0.0
+            return None
 
         vol_vtbl = ctypes.cast(ctypes.cast(endpoint_volume, POINTER(c_void_p)).contents, POINTER(c_void_p))
-
-        # 1. 自动解除静音
-        SetMute_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, wintypes.BOOL, c_void_p)
-        SetMute = SetMute_proto(vol_vtbl[14])
-        SetMute(endpoint_volume, False, None)
-
-        # 2. 获取当前音量
         GetMasterVolumeLevelScalar_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, POINTER(c_float))
         GetMasterVolumeLevelScalar = GetMasterVolumeLevelScalar_proto(vol_vtbl[9])
         current_vol = c_float(0.0)
         GetMasterVolumeLevelScalar(endpoint_volume, byref(current_vol))
-        curr_val = current_vol.value
-
-        # 3. 调高音量至至少 min_level_percent% (若当前已更高则保持，若低于则调高至目标值)
-        target_scalar = max(curr_val, min(1.0, max(0.0, float(min_level_percent) / 100.0)))
-        SetMasterVolumeLevelScalar_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, c_float, c_void_p)
-        SetMasterVolumeLevelScalar = SetMasterVolumeLevelScalar_proto(vol_vtbl[7])
-        SetMasterVolumeLevelScalar(endpoint_volume, c_float(target_scalar), None)
+        curr_val = float(current_vol.value)
 
         Release_proto(vol_vtbl[2])(endpoint_volume)
         Release_proto(dev_vtbl[2])(device)
         Release_proto(enum_vtbl[2])(enumerator)
 
-        return True, curr_val, target_scalar
+        return curr_val
     except Exception as e:
-        print(f"[boost_system_volume] 异常: {e}")
-        return False, 0.0, 0.0
+        print(f"[get_system_volume] 异常: {e}")
+        return None
     finally:
         if co_initialized:
             try:
                 ole32.CoUninitialize()
             except Exception:
                 pass
+
+
+def set_system_volume(scalar, unmute=False):
+    """
+    通过 Windows 原生 Core Audio COM 接口设置系统主音量标量 (0.0 ~ 1.0)。
+    可选是否自动解除静音状态。
+    返回: bool (是否设置成功)
+    """
+    if scalar is None:
+        return False
+    scalar = max(0.0, min(1.0, float(scalar)))
+
+    co_initialized = False
+    try:
+        hr = ole32.CoInitialize(None)
+        if hr in (0, 1):
+            co_initialized = True
+    except Exception:
+        pass
+
+    try:
+        enumerator = c_void_p()
+        hr = ole32.CoCreateInstance(
+            byref(CLSID_MMDeviceEnumerator),
+            None,
+            CLSCTX_ALL,
+            byref(IID_IMMDeviceEnumerator),
+            byref(enumerator)
+        )
+        if hr != 0 or not enumerator:
+            return False
+
+        enum_vtbl = ctypes.cast(ctypes.cast(enumerator, POINTER(c_void_p)).contents, POINTER(c_void_p))
+        GetDefaultAudioEndpoint_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, c_uint32, c_uint32, POINTER(c_void_p))
+        GetDefaultAudioEndpoint = GetDefaultAudioEndpoint_proto(enum_vtbl[4])
+        Release_proto = ctypes.WINFUNCTYPE(c_uint32, c_void_p)
+
+        device = c_void_p()
+        hr = GetDefaultAudioEndpoint(enumerator, eRender, eMultimedia, byref(device))
+        if hr != 0 or not device:
+            Release_proto(enum_vtbl[2])(enumerator)
+            return False
+
+        dev_vtbl = ctypes.cast(ctypes.cast(device, POINTER(c_void_p)).contents, POINTER(c_void_p))
+        Activate_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, POINTER(_GUID), wintypes.DWORD, c_void_p, POINTER(c_void_p))
+        Activate = Activate_proto(dev_vtbl[3])
+
+        endpoint_volume = c_void_p()
+        hr = Activate(device, byref(IID_IAudioEndpointVolume), CLSCTX_ALL, None, byref(endpoint_volume))
+        if hr != 0 or not endpoint_volume:
+            Release_proto(dev_vtbl[2])(device)
+            Release_proto(enum_vtbl[2])(enumerator)
+            return False
+
+        vol_vtbl = ctypes.cast(ctypes.cast(endpoint_volume, POINTER(c_void_p)).contents, POINTER(c_void_p))
+
+        if unmute:
+            SetMute_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, wintypes.BOOL, c_void_p)
+            SetMute = SetMute_proto(vol_vtbl[14])
+            SetMute(endpoint_volume, False, None)
+
+        SetMasterVolumeLevelScalar_proto = ctypes.WINFUNCTYPE(HRESULT, c_void_p, c_float, c_void_p)
+        SetMasterVolumeLevelScalar = SetMasterVolumeLevelScalar_proto(vol_vtbl[7])
+        SetMasterVolumeLevelScalar(endpoint_volume, c_float(scalar), None)
+
+        Release_proto(vol_vtbl[2])(endpoint_volume)
+        Release_proto(dev_vtbl[2])(device)
+        Release_proto(enum_vtbl[2])(enumerator)
+
+        return True
+    except Exception as e:
+        print(f"[set_system_volume] 异常: {e}")
+        return False
+    finally:
+        if co_initialized:
+            try:
+                ole32.CoUninitialize()
+            except Exception:
+                pass
+
+
+def boost_system_volume(min_level_percent=80):
+    """
+    通过 Windows 原生 Core Audio COM 接口将系统主音量调高至指定百分比 (默认 80%)，
+    并自动解除静音状态。无需依赖任何第三方库，纳秒级响应。
+    返回: (success: bool, old_vol: float, new_vol: float)
+    """
+    old_vol = get_system_volume()
+    if old_vol is None:
+        old_vol = 0.5
+    target_scalar = min(1.0, max(0.0, float(min_level_percent) / 100.0))
+    success = set_system_volume(target_scalar, unmute=True)
+    return success, old_vol, target_scalar
 
 class CaptchaAlertDetector:
     """
@@ -152,11 +234,43 @@ class CaptchaAlertDetector:
         self.is_alarm_playing = False
         self.is_enabled = True
         self.match_threshold = 0.72 # 全景模板相关系数门槛
+
+        # 打怪初始基准音量与 5 秒恢复定时器
+        self.baseline_volume = None
+        self.volume_restore_timer = None
+        self.volume_restore_lock = threading.Lock()
         
         # 多尺度金字塔
         self.scales = [1.0, 0.9, 1.1, 0.8, 1.25]
         
         self.load_templates()
+
+    def set_baseline_volume(self, vol):
+        """记录打怪开始时的系统音量作为基准音量"""
+        if vol is not None:
+            self.baseline_volume = float(vol)
+            print(f"[CaptchaAlertDetector] 已锁定打怪基准音量: {self.baseline_volume * 100:.0f}%")
+
+    def get_baseline_volume(self):
+        return self.baseline_volume
+
+    def restore_volume(self):
+        """立即将系统音量恢复至打怪基准音量，并取消倒计时定时器"""
+        with self.volume_restore_lock:
+            if self.volume_restore_timer is not None:
+                self.volume_restore_timer.cancel()
+                self.volume_restore_timer = None
+            if self.baseline_volume is not None:
+                set_system_volume(self.baseline_volume)
+                print(f"[CaptchaAlertDetector] 系统音量已恢复至基准值: {self.baseline_volume * 100:.0f}%")
+
+    def _on_volume_restore_timeout(self):
+        """5秒定时器到期后执行音量恢复"""
+        with self.volume_restore_lock:
+            self.volume_restore_timer = None
+            if self.baseline_volume is not None:
+                set_system_volume(self.baseline_volume)
+                print(f"[CaptchaAlertDetector] 5秒倒计时结束，系统音量已恢复至基准值: {self.baseline_volume * 100:.0f}%")
 
     def load_templates(self):
         """加载完整 3 连框模板与单个准星模板"""
@@ -263,13 +377,14 @@ class CaptchaAlertDetector:
 
         return False, []
 
-    def trigger_alarm(self, boost_volume=True, target_volume=80, force=False):
+    def trigger_alarm(self, boost_volume=True, target_volume=80, force=False, restore_delay=5.0):
         """
-        触发多频急促警报音效 (非阻塞多线程执行)
+        触发多频急促警报音效 (非阻塞多线程执行)，并将音量提升至 80%，并在 5 秒后自动恢复。
         参数:
             boost_volume: 是否自动调高系统音量至 80% 并解除静音
             target_volume: 目标系统音量百分比 (默认 80)
             force: 是否忽略冷却时间强制触发 (测试用)
+            restore_delay: 恢复至基准音量的延时秒数 (默认 5.0 秒)
         """
         now = time.time()
         if not force:
@@ -278,6 +393,20 @@ class CaptchaAlertDetector:
         
         self.last_alarm_time = now
         self.is_alarm_playing = True
+
+        # 若勾选自动调高音量，启动/刷新 5 秒倒计时恢复机制
+        if boost_volume:
+            if self.baseline_volume is None:
+                cur_v = get_system_volume()
+                if cur_v is not None:
+                    self.baseline_volume = cur_v
+
+            with self.volume_restore_lock:
+                if self.volume_restore_timer is not None:
+                    self.volume_restore_timer.cancel()
+                self.volume_restore_timer = threading.Timer(restore_delay, self._on_volume_restore_timeout)
+                self.volume_restore_timer.daemon = True
+                self.volume_restore_timer.start()
 
         def _play():
             try:
@@ -301,4 +430,113 @@ class CaptchaAlertDetector:
 
         thread = threading.Thread(target=_play, daemon=True)
         thread.start()
+
+
+class BotSessionLogger:
+    """
+    打怪会话本地 JSON 日志记录器
+    持久化存储于本地文件 (默认为项目根目录 bot_sessions.json)，用于 Git 追踪与 GitHub 上传。
+    数据结构格式:
+    [
+      {
+        "start_time": "2026-09-07 16:30:00",
+        "captcha_triggers": [
+          "2026-09-07 16:35:12"
+        ],
+        "end_time": "2026-09-07 16:45:00"
+      }
+    ]
+    """
+    def __init__(self, log_path=None):
+        if log_path is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            self.log_path = os.path.join(base_dir, "bot_sessions.json")
+        else:
+            self.log_path = log_path
+
+        self.lock = threading.Lock()
+        self.current_session_idx = None
+        self._ensure_file_exists()
+
+    def _ensure_file_exists(self):
+        with self.lock:
+            if not os.path.exists(self.log_path) or os.path.getsize(self.log_path) == 0:
+                try:
+                    with open(self.log_path, "w", encoding="utf-8") as f:
+                        json.dump([], f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    print(f"[BotSessionLogger] 初始化日志文件异常: {e}")
+
+    def _load_all_sessions(self):
+        try:
+            if os.path.exists(self.log_path) and os.path.getsize(self.log_path) > 0:
+                with open(self.log_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        return data
+        except Exception as e:
+            print(f"[BotSessionLogger] 读取日志文件异常: {e}")
+        return []
+
+    def _save_all_sessions(self, sessions):
+        try:
+            with open(self.log_path, "w", encoding="utf-8") as f:
+                json.dump(sessions, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[BotSessionLogger] 写入日志文件异常: {e}")
+
+    def start_session(self):
+        """点击开始打怪时调用：追加一条新 session 记录并持久化"""
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.lock:
+            sessions = self._load_all_sessions()
+            new_session = {
+                "start_time": now_str,
+                "captcha_triggers": [],
+                "end_time": None
+            }
+            sessions.append(new_session)
+            self._save_all_sessions(sessions)
+            self.current_session_idx = len(sessions) - 1
+            print(f"[BotSessionLogger] 打怪 Session 开始: {now_str} (已更新至 {self.log_path})")
+            return new_session
+
+    def record_captcha_trigger(self):
+        """测谎报警触发时调用：向当前 session 追加触发时间戳并持久化"""
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.lock:
+            sessions = self._load_all_sessions()
+            target_idx = None
+            if self.current_session_idx is not None and 0 <= self.current_session_idx < len(sessions):
+                target_idx = self.current_session_idx
+            elif sessions and sessions[-1].get("end_time") is None:
+                target_idx = len(sessions) - 1
+
+            if target_idx is not None:
+                sessions[target_idx].setdefault("captcha_triggers", []).append(now_str)
+                self._save_all_sessions(sessions)
+                print(f"[BotSessionLogger] 记录测谎仪触发时间戳: {now_str}")
+                return True
+            else:
+                print(f"[BotSessionLogger] 警告: 当前没有进行中的打怪 Session，未记录测谎触发")
+                return False
+
+    def end_session(self):
+        """点击停止打怪或程序关闭时调用：写入结束时间戳并持久化"""
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.lock:
+            sessions = self._load_all_sessions()
+            target_idx = None
+            if self.current_session_idx is not None and 0 <= self.current_session_idx < len(sessions):
+                target_idx = self.current_session_idx
+            elif sessions and sessions[-1].get("end_time") is None:
+                target_idx = len(sessions) - 1
+
+            if target_idx is not None:
+                sessions[target_idx]["end_time"] = now_str
+                self._save_all_sessions(sessions)
+                self.current_session_idx = None
+                print(f"[BotSessionLogger] 打怪 Session 结束: {now_str} (已更新至 {self.log_path})")
+                return True
+            return False
 

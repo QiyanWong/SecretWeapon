@@ -24,6 +24,7 @@ names:
   22: crab
   23: tauromacis
   24: dark_stone_golem
+  25: zombie_lupin
 path: ./dataset
 train: images/train
 val: images/val

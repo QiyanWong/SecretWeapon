@@ -51,7 +51,8 @@ CLASS_LIST = [
     'rocky_mask',
     'crab',
     'tauromacis',
-    'dark_stone_golem'
+    'dark_stone_golem',
+    'zombie_lupin'
 ]
 CLASS_TO_ID = {name: i for i, name in enumerate(CLASS_LIST)}
 MONSTER_CLASSES = CLASS_LIST[2:]
@@ -78,7 +79,8 @@ MONSTER_TO_UNIQUE_DROP = {
     'wooden_mask':     'wooden_board',
     'lupin':           'lupin_banana',
     'rocky_mask':      'rocky_mask_doll',
-    'crab':            'lorang_claw'
+    'crab':            'lorang_claw',
+    'zombie_lupin':    'cursed_doll'
 }
 
 

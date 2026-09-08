@@ -40,7 +40,7 @@ from PyQt5.QtGui import QPixmap, QImage, QFont, QPainter, QPen, QColor
 from minimap_tracker import MinimapTracker, RouteManager, PathNode, DEFAULT_ROUTE_PATH, DEFAULT_MINIMAP_CONFIG_PATH, ROUTES_DIR
 from game_controller import GameController
 from decision_engine import DecisionEngine
-from captcha_detector import CaptchaAlertDetector
+from captcha_detector import CaptchaAlertDetector, BotSessionLogger, get_system_volume, set_system_volume
 from auto_buff_manager import AutoBuffManager
 from player_status_tracker import PlayerStatusTracker
 
@@ -217,6 +217,7 @@ class DetectorApp(QMainWindow):
         self.game_controller = GameController()
         self.decision_engine = DecisionEngine(self.game_controller, self.route_manager)
         self.captcha_detector = CaptchaAlertDetector()
+        self.session_logger = BotSessionLogger()
         self.last_captcha_log_time = 0.0
         self.auto_buff_manager = AutoBuffManager(self.game_controller)
 
@@ -1029,6 +1030,8 @@ class DetectorApp(QMainWindow):
         """激活鼠标框选背包金币区域模式"""
         self.roi_target_mode = "meso"
         self.lbl_display.set_selection_mode(True)
+        if hasattr(self, 'chk_profit_tracker') and not self.chk_profit_tracker.isChecked():
+            self.chk_profit_tracker.setChecked(True)
         self.log("🎯 【金币框选激活】请在左侧主画面上按住鼠标左键拖拽，框选出打开的背包底部的金币数字区域。")
 
     def reset_all_dashboard_stats(self):
@@ -1231,12 +1234,30 @@ class DetectorApp(QMainWindow):
             self.status_tracker.inventory_meso_roi = (x, y, w, h)
             if hasattr(self, 'lbl_meso_roi_info'):
                 self.lbl_meso_roi_info.setText(f"X={x}, Y={y}, W={w}, H={h}")
-            self.log(f"🎯 【背包金币区域对齐成功】已成功框选金币区域: Left={x}, Top={y}, Width={w}, Height={h}。一旦金币数字进入该区域将立即作为起始金币并实时统计增量！")
+
+            # 自动确保收益统计开启
+            if hasattr(self, 'chk_profit_tracker') and not self.chk_profit_tracker.isChecked():
+                self.chk_profit_tracker.setChecked(True)
+            self.status_tracker.profit_tracker_enabled = True
+
             # 框选后重置初始状态，下次读取立即直接设为起始金币
             self.status_tracker.initial_meso = None
             self.status_tracker.current_meso = 0
             self.status_tracker.gained_meso = 0
             self.status_tracker.last_meso_parse_time = 0.0
+
+            # 若当前画面帧存在，立即触发即时识别与看板同步
+            if hasattr(self, 'current_cv_frame') and self.current_cv_frame is not None:
+                detected_val = self.status_tracker.update_inventory_meso(self.current_cv_frame)
+                self._update_profit_ui()
+                if detected_val > 0:
+                    self.log(f"🎯 【背包金币区域对齐成功】框选 X={x}, Y={y}, W={w}, H={h}，即时识别到金币: {detected_val:,}，已成功设为起始金币！")
+                else:
+                    self.log(f"🎯 【背包金币区域对齐成功】已成功框选金币区域: X={x}, Y={y}, W={w}, H={h}。一旦金币数字进入该区域将立即作为起始金币并实时统计增量！")
+            else:
+                self.log(f"🎯 【背包金币区域对齐成功】已成功框选金币区域: Left={x}, Top={y}, Width={w}, Height={h}。")
+
+            self.save_combat_config()
             self.roi_target_mode = "minimap"
         else:
             self.minimap_tracker.set_crop_box(x, y, w, h)
@@ -1311,6 +1332,16 @@ class DetectorApp(QMainWindow):
             self.btn_bot.setStyle(self.btn_bot.style())
             self.log("【打怪总开关】已启动打怪逻辑！(联动激活【YOLO检测】和【状态保持】)")
 
+            # 1. 记录系统主音量作为打怪基准音量
+            cur_vol = get_system_volume()
+            if cur_vol is not None and hasattr(self, 'captcha_detector') and self.captcha_detector:
+                self.captcha_detector.set_baseline_volume(cur_vol)
+                self.log(f"🔊【系统音量监控】已锁定打怪初始音量: {cur_vol * 100:.0f}% (测谎报警时调高至80%并在5秒后自动恢复)")
+
+            # 2. 创建并保存本次打怪 Session 本地 JSON 日志
+            if hasattr(self, 'session_logger') and self.session_logger:
+                self.session_logger.start_session()
+
             # 自动将目标游戏窗口前置并获取焦点，确保 SendInput 命中目标
             if self.selected_hwnd:
                 try:
@@ -1330,6 +1361,15 @@ class DetectorApp(QMainWindow):
             self.btn_bot.setStyle(self.btn_bot.style())
             self.decision_engine.reset()
             self.game_controller.release_all_keys()
+
+            # 1. 结束本次打怪 Session 并写入结束时间戳至本地日志
+            if hasattr(self, 'session_logger') and self.session_logger:
+                self.session_logger.end_session()
+
+            # 2. 确保系统音量平稳恢复至打怪前基准音量
+            if hasattr(self, 'captcha_detector') and self.captcha_detector:
+                self.captcha_detector.restore_volume()
+
             self.log("【打怪总开关】已停止打怪。")
 
     def toggle_route_recording(self):
@@ -1682,12 +1722,15 @@ class DetectorApp(QMainWindow):
             self.log(f"【技能配置加载失败】: {e}")
 
     def test_captcha_alarm(self):
-        """手动测试测谎报警音效与自动调高音量至80%"""
+        """手动测试测谎报警音效与自动调高音量至80% (并在5秒后自动恢复)"""
         if hasattr(self, 'captcha_detector') and self.captcha_detector is not None:
             boost_vol = self.chk_captcha_volume.isChecked()
+            cur_v = get_system_volume()
+            if self.captcha_detector.baseline_volume is None and cur_v is not None:
+                self.captcha_detector.set_baseline_volume(cur_v)
             self.captcha_detector.trigger_alarm(boost_volume=boost_vol, target_volume=80, force=True)
             if boost_vol:
-                self.log("🔔【报警音量测试】已触发测试警报：已自动调高系统音量至 80% 并播放高频警报蜂鸣！")
+                self.log("🔔【报警音量测试】已触发测试警报：已自动调高系统音量至 80% 并播放高频警报蜂鸣，5秒后将自动恢复！")
             else:
                 self.log("🔔【报警音量测试】已触发测试警报：播放高频警报蜂鸣（未勾选自动调高音量）。")
         else:
@@ -1965,12 +2008,16 @@ class DetectorApp(QMainWindow):
                 boost_vol = hasattr(self, 'chk_captcha_volume') and self.chk_captcha_volume.isChecked()
                 self.captcha_detector.trigger_alarm(boost_volume=boost_vol, target_volume=80)
 
-                # 限流 2.0s 打印高危警告日志
+                # 限流 2.0s 打印高危警告日志并记录至 Session 日志
                 now_time = time.time()
                 if now_time - getattr(self, 'last_captcha_log_time', 0.0) > 2.0:
                     self.last_captcha_log_time = now_time
-                    vol_hint = "（已自动调高系统音量至80%）" if boost_vol else ""
+                    vol_hint = "（已自动调高系统音量至80%，5秒后恢复）" if boost_vol else ""
                     self.log(f"🚨【最高危警报】检测到测谎/符文图形验证弹窗！{vol_hint}已紧急制动按键，请立即手动接管！")
+
+                    # 记录测谎仪触发时间戳至本地 JSON 日志
+                    if hasattr(self, 'session_logger') and self.session_logger:
+                        self.session_logger.record_captcha_trigger()
 
                 # 在监控画面中绘制高亮红色警报边框与文字
                 if self.is_monitoring_preview:
@@ -2193,6 +2240,17 @@ class DetectorApp(QMainWindow):
         self.lbl_status.setText(
             f"FPS: {self.fps_display:.1f} | 寻路模式:{nav_mode_str} | 小地图坐标:{pos_str} | 传统节点:{len(self.route_manager.nodes)}个{rec_str} | 检出目标:{len(detections)}个"
         )
+
+    def closeEvent(self, event):
+        try:
+            if getattr(self, 'is_bot_running', False):
+                if hasattr(self, 'session_logger') and self.session_logger:
+                    self.session_logger.end_session()
+                if hasattr(self, 'captcha_detector') and self.captcha_detector:
+                    self.captcha_detector.restore_volume()
+        except Exception as e:
+            print(f"[DetectorApp.closeEvent] 退出清理异常: {e}")
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":

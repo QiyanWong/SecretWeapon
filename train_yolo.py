@@ -42,7 +42,8 @@ CLASS_NAMES = [
     'rocky_mask',
     'crab',
     'tauromacis',
-    'dark_stone_golem'
+    'dark_stone_golem',
+    'zombie_lupin'
 ]
 
 
