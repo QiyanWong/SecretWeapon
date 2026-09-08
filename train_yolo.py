@@ -43,7 +43,8 @@ CLASS_NAMES = [
     'crab',
     'tauromacis',
     'dark_stone_golem',
-    'zombie_lupin'
+    'zombie_lupin',
+    'wraith'
 ]
 
 

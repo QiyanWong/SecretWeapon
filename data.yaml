@@ -25,6 +25,7 @@ names:
   23: tauromacis
   24: dark_stone_golem
   25: zombie_lupin
+  26: wraith
 path: ./dataset
 train: images/train
 val: images/val

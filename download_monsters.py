@@ -37,7 +37,8 @@ MOB_MAPPING = {
     'rocky_mask':      {'id': 2230111, 'cn': '石面怪人', 'en': 'Rocky Mask'},
     'crab':            {'id': 3230102, 'cn': '红螃蟹/罗朗', 'en': 'Lorang'},
     'tauromacis':      {'id': 5130100, 'cn': '月牙牛魔王', 'en': 'Tauromacis'},
-    'zombie_lupin':    {'id': 4230101, 'cn': '僵尸猴/僵尸鲁胖', 'en': 'Zombie Lupin'}
+    'zombie_lupin':    {'id': 4230101, 'cn': '僵尸猴/僵尸鲁胖', 'en': 'Zombie Lupin'},
+    'wraith':          {'id': 4230102, 'cn': '大幽灵', 'en': 'Wraith'}
 }
 
 # 仅下载存活及战斗相关的动态帧 (排除死亡消散 die 动作，防止模型误将尸体当做存活目标)
