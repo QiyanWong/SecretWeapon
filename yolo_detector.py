@@ -38,7 +38,7 @@ from PyQt5.QtCore import QTimer, Qt, QPoint, QRect, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QFont, QPainter, QPen, QColor
 
 from minimap_tracker import MinimapTracker, RouteManager, PathNode, DEFAULT_ROUTE_PATH, DEFAULT_MINIMAP_CONFIG_PATH, ROUTES_DIR
-from game_controller import GameController
+from game_controller import GameController, find_pico_port
 from decision_engine import DecisionEngine
 from captcha_detector import CaptchaAlertDetector, BotSessionLogger, get_system_volume, set_system_volume
 from auto_buff_manager import AutoBuffManager
@@ -353,13 +353,16 @@ class DetectorApp(QMainWindow):
         self.lbl_conf_val.setStyleSheet("font-weight: bold; color: #f9e2af;")
         top_layout.addWidget(self.lbl_conf_val)
 
-        # 🍓 树莓派纯物理蓝牙硬件按键 / 💻 SendInput 驱动模拟 切换开关
+        # 🍓 树莓派纯物理硬件按键 (Pico USB / 蓝牙) / 💻 SendInput 驱动模拟 切换开关
         self.chk_bluetooth_mode = QCheckBox()
-        self.chk_bluetooth_mode.setToolTip("【勾选】启用树莓派纯物理蓝牙硬件键盘（目标: 192.168.0.190:8888）注入按键，物理级免封\n【取消勾选】回退至本机 Win32 SendInput 驱动级直接模拟按键")
-        is_bt = getattr(self.game_controller, "mode", "bluetooth") == "bluetooth"
-        self.chk_bluetooth_mode.setChecked(is_bt)
-        if is_bt:
-            self.chk_bluetooth_mode.setText("🍓 树莓派蓝牙硬件按键 (物理免封)")
+        self.chk_bluetooth_mode.setToolTip("【勾选】启用树莓派纯物理硬件键盘 (优先 Pico USB 直连 / 蓝牙，0延迟物理级免封)\n【取消勾选】回退至本机 Win32 SendInput 驱动级直接模拟按键")
+        is_hardware = getattr(self.game_controller, "mode", "pico") in ("pico", "bluetooth")
+        self.chk_bluetooth_mode.setChecked(is_hardware)
+        if is_hardware:
+            if getattr(self.game_controller, "mode", "pico") == "pico":
+                self.chk_bluetooth_mode.setText("🍓 树莓派 Pico 硬件按键 (USB物理免封)")
+            else:
+                self.chk_bluetooth_mode.setText("🍓 树莓派蓝牙硬件按键 (物理免封)")
             self.chk_bluetooth_mode.setStyleSheet("color: #a6e3a1; font-weight: bold; margin-left: 25px;")
         else:
             self.chk_bluetooth_mode.setText("💻 本机 SendInput 模拟按键")
@@ -1074,13 +1077,20 @@ class DetectorApp(QMainWindow):
 
     def on_controller_mode_toggled(self, checked):
         """响应控制器模式切换勾选"""
-        mode = "bluetooth" if checked else "directinput"
-        self.game_controller.switch_mode(mode)
         if checked:
-            self.chk_bluetooth_mode.setText("🍓 树莓派蓝牙硬件按键 (物理免封)")
-            self.chk_bluetooth_mode.setStyleSheet("color: #a6e3a1; font-weight: bold; margin-left: 25px;")
-            self.log(f"【控制器切换】已启用：🍓 树莓派纯物理蓝牙硬件键盘 (目标: {self.game_controller.rpi_ip}:{self.game_controller.rpi_port})")
+            # 优先启用 Pico USB 硬件按键模式
+            self.game_controller.switch_mode("pico")
+            if getattr(self.game_controller, "pico_ser", None):
+                port = find_pico_port(self.game_controller.pico_port)
+                self.chk_bluetooth_mode.setText("🍓 树莓派 Pico 硬件按键 (USB物理免封)")
+                self.chk_bluetooth_mode.setStyleSheet("color: #a6e3a1; font-weight: bold; margin-left: 25px;")
+                self.log(f"【控制器切换】已启用：🍓 树莓派 Pico USB 原生硬件物理键盘 (端口: {port})")
+            else:
+                self.chk_bluetooth_mode.setText("🍓 树莓派 Pico (未插好或未识别)")
+                self.chk_bluetooth_mode.setStyleSheet("color: #f38ba8; font-weight: bold; margin-left: 25px;")
+                self.log("【控制器警告】树莓派 Pico 无法打开 USB 串口，请检查是否插在电脑 USB 口。")
         else:
+            self.game_controller.switch_mode("directinput")
             self.chk_bluetooth_mode.setText("💻 本机 SendInput 模拟按键")
             self.chk_bluetooth_mode.setStyleSheet("color: #fab387; font-weight: bold; margin-left: 25px;")
             self.log("【控制器切换】已切换为：💻 本机 Win32 SendInput (DirectInput 扫描码)")

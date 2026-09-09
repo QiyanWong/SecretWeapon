@@ -204,15 +204,36 @@ class HumanJitter:
         return max(0.035, mean_interval + jitter)
 
 
+def find_pico_port(preferred_port=None):
+    """自动扫描并获取树莓派 Pico 的 USB 虚拟串口号 (如 COM3)"""
+    if preferred_port and preferred_port.upper() not in ("AUTO", ""):
+        return preferred_port
+    try:
+        import serial.tools.list_ports
+        for p in serial.tools.list_ports.comports():
+            # 树莓派 Pico / CircuitPython VID=0x239A
+            if p.vid == 0x239A or "239A" in (p.hwid or "").upper():
+                return p.device
+            if any(k in (p.description or "").lower() for k in ["circuitpython", "pico", "rp2040"]):
+                return p.device
+        for p in serial.tools.list_ports.comports():
+            if "USB" in (p.description or "").upper() and p.device != "COM1":
+                return p.device
+    except Exception:
+        pass
+    return "COM3"
+
+
 class GameController:
     """
-    基于 DirectInput 扫描码 / 树莓派物理蓝牙键盘 与拟人化动力学抖动的按键控制器
-    支持两套底层按键后端：
-      - 'bluetooth': 通过局域网 UDP 将按键发送到树莓派，由树莓派物理蓝牙 HID 键盘向电脑注入 (100% 物理级免封)
+    基于 DirectInput 扫描码 / 树莓派 Pico USB 物理键盘 / 树莓派 3B+ 蓝牙物理键盘 与拟人化动力学抖动的按键控制器
+    支持三套底层按键后端：
+      - 'pico': 通过 USB 串口与树莓派 Pico 通信，由 Pico 原生硬件 USB HID 注入主板 (100% 物理免封，0延时，即插即用)
+      - 'bluetooth': 通过局域网 UDP 将按键发送到树莓派 3B+，由蓝牙 HID 注入
       - 'directinput': 本机 Win32 SendInput 驱动级扫描码模拟
     """
 
-    def __init__(self, mode=None, rpi_ip=None, rpi_port=None, **kwargs):
+    def __init__(self, mode=None, rpi_ip=None, rpi_port=None, pico_port=None, **kwargs):
         # 读取本地配置 runtime_config.json
         cfg_path = os.path.join(os.path.dirname(__file__), "runtime_config.json")
         cfg = {}
@@ -223,7 +244,8 @@ class GameController:
             except Exception:
                 pass
 
-        self.mode = mode or cfg.get("controller_mode", "bluetooth")
+        self.mode = mode or cfg.get("controller_mode", "pico")
+        self.pico_port = pico_port or cfg.get("pico_port", "auto")
         self.rpi_ip = rpi_ip or cfg.get("rpi_ip", "192.168.0.190")
         self.rpi_port = rpi_port or cfg.get("rpi_port", 8888)
 
@@ -231,33 +253,60 @@ class GameController:
         self.jitter = HumanJitter()
         self.mouse_drifter = HumanMouseDrifter()
 
-        if self.mode == "bluetooth":
-            self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            print(f"[GameController] [模式] 树莓派硬件级蓝牙物理键盘 (目标: {self.rpi_ip}:{self.rpi_port})")
-        else:
-            self.udp_sock = None
-            print("[GameController] [模式] 本机 DirectInput (SendInput 扫描码)")
+        self.udp_sock = None
+        self.pico_ser = None
 
+        self._init_backend()
         print("[GameController] 拟人化按键动力学已就绪 (对数正态击键时长、AR(1)肌肉惯性、非对称组合键时序、鼠标微扰)。")
 
+    def _init_backend(self):
+        if self.mode == "pico":
+            port = find_pico_port(self.pico_port)
+            try:
+                import serial
+                if self.pico_ser:
+                    try:
+                        self.pico_ser.close()
+                    except Exception:
+                        pass
+                self.pico_ser = serial.Serial(port, 115200, timeout=0.2)
+                time.sleep(0.1)
+                self.pico_ser.reset_input_buffer()
+                self.pico_ser.write(b"PING\n")
+                self.pico_ser.flush()
+                resp = self.pico_ser.readline().decode('utf-8', errors='ignore').strip()
+                print(f"[GameController] [模式] 树莓派 Pico USB 硬件物理键盘已连接 (端口: {port}, 握手: {resp})")
+            except Exception as e:
+                print(f"[GameController] [警告] 连接树莓派 Pico ({port}) 失败: {e}")
+                self.pico_ser = None
+
+        elif self.mode == "bluetooth":
+            if not self.udp_sock:
+                self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            print(f"[GameController] [模式] 树莓派 3B+ 蓝牙硬件物理键盘 (目标: {self.rpi_ip}:{self.rpi_port})")
+
+        else:
+            print("[GameController] [模式] 本机 DirectInput (SendInput 扫描码)")
+
     def switch_mode(self, new_mode):
-        """动态切换按键模式 ('bluetooth' 或 'directinput')，并自动同步写入 runtime_config.json"""
+        """动态切换按键模式 ('pico', 'bluetooth', 或 'directinput')，并自动同步写入 runtime_config.json"""
         new_mode = new_mode.lower()
-        if new_mode not in ("bluetooth", "directinput"):
+        if new_mode not in ("pico", "bluetooth", "directinput"):
             return
         if self.mode == new_mode:
             return
 
         # 切换前释放所有已按下的按键，避免卡键
         self.release_all_keys()
-        self.mode = new_mode
+        if self.pico_ser:
+            try:
+                self.pico_ser.close()
+            except Exception:
+                pass
+            self.pico_ser = None
 
-        if self.mode == "bluetooth":
-            if not self.udp_sock:
-                self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            print(f"[GameController] [模式切换] 树莓派硬件级蓝牙物理键盘 (目标: {self.rpi_ip}:{self.rpi_port})")
-        else:
-            print("[GameController] [模式切换] 本机 DirectInput (SendInput 扫描码)")
+        self.mode = new_mode
+        self._init_backend()
 
         # 同步持久化写入 runtime_config.json
         cfg_path = os.path.join(os.path.dirname(__file__), "runtime_config.json")
@@ -278,11 +327,19 @@ class GameController:
         if key_name not in self.pressed_keys:
             self.pressed_keys.add(key_name)
 
-        if self.mode == "bluetooth":
+        if self.mode == "pico" and self.pico_ser:
+            try:
+                self.pico_ser.write(f"P:{key_name}\n".encode('utf-8'))
+                self.pico_ser.flush()
+            except Exception as e:
+                print(f"[GameController] Pico 发送 P:{key_name} 异常: {e}")
+
+        elif self.mode == "bluetooth" and self.udp_sock:
             try:
                 self.udp_sock.sendto(f"P:{key_name}".encode('utf-8'), (self.rpi_ip, self.rpi_port))
             except Exception as e:
                 print(f"[GameController] 蓝牙发送 P:{key_name} 异常: {e}")
+
         else:
             scan_code = DIK_KEYS.get(key_name)
             if scan_code:
@@ -296,11 +353,19 @@ class GameController:
         if key_name in self.pressed_keys:
             self.pressed_keys.remove(key_name)
 
-        if self.mode == "bluetooth":
+        if self.mode == "pico" and self.pico_ser:
+            try:
+                self.pico_ser.write(f"R:{key_name}\n".encode('utf-8'))
+                self.pico_ser.flush()
+            except Exception as e:
+                print(f"[GameController] Pico 发送 R:{key_name} 异常: {e}")
+
+        elif self.mode == "bluetooth" and self.udp_sock:
             try:
                 self.udp_sock.sendto(f"R:{key_name}".encode('utf-8'), (self.rpi_ip, self.rpi_port))
             except Exception as e:
                 print(f"[GameController] 蓝牙发送 R:{key_name} 异常: {e}")
+
         else:
             scan_code = DIK_KEYS.get(key_name)
             if scan_code:
@@ -340,7 +405,13 @@ class GameController:
 
     def release_all_keys(self):
         """释放所有当前按下的按键"""
-        if self.mode == "bluetooth":
+        if self.mode == "pico" and self.pico_ser:
+            try:
+                self.pico_ser.write(b"C:CLEAR\n")
+                self.pico_ser.flush()
+            except Exception:
+                pass
+        elif self.mode == "bluetooth" and self.udp_sock:
             try:
                 self.udp_sock.sendto(b"C:CLEAR", (self.rpi_ip, self.rpi_port))
             except Exception:
