@@ -73,11 +73,19 @@ send_report()
 
 buf = ""
 while True:
-    if supervisor.runtime.serial_bytes_available:
-        ch = sys.stdin.read(1)
-        if ch == '\n' or ch == '\r':
-            cmd = buf.strip()
-            buf = ""
+    avail = supervisor.runtime.serial_bytes_available
+    if avail:
+        data = sys.stdin.read(avail)
+        buf += data
+        while '\n' in buf or '\r' in buf:
+            # 提取一行指令
+            newline_idx = len(buf)
+            for sep in ('\n', '\r'):
+                idx = buf.find(sep)
+                if idx != -1 and idx < newline_idx:
+                    newline_idx = idx
+            cmd = buf[:newline_idx].strip()
+            buf = buf[newline_idx + 1:]
             if not cmd:
                 continue
 
@@ -103,7 +111,6 @@ while True:
                 elif k in HID_KEYCODES:
                     pressed_keys.add(HID_KEYCODES[k])
                 send_report()
-                print(f"OK:P:{k}")
                 if led:
                     led.value = True
 
@@ -115,7 +122,6 @@ while True:
                 elif k in HID_KEYCODES:
                     pressed_keys.discard(HID_KEYCODES[k])
                 send_report()
-                print(f"OK:R:{k}")
                 if led and not pressed_keys and not active_modifiers:
                     led.value = False
 
@@ -124,11 +130,7 @@ while True:
                 pressed_keys.clear()
                 active_modifiers = 0
                 send_report()
-                print("OK:CLEAR")
                 if led:
                     led.value = False
-
-        else:
-            buf += ch
     else:
-        time.sleep(0.001)
+        time.sleep(0.0005)

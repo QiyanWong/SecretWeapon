@@ -429,6 +429,7 @@ class DetectorApp(QMainWindow):
         self.txt_log = QTextEdit()
         self.txt_log.setReadOnly(True)
         self.txt_log.setMaximumHeight(100)
+        self.txt_log.document().setMaximumBlockCount(150)
         log_layout.addWidget(self.txt_log)
         left_layout.addWidget(log_group, 1)
 
@@ -1886,6 +1887,15 @@ class DetectorApp(QMainWindow):
         self.log(f"📸 【诊断快照已导出】已保存当前帧至 dataset/debug_snapshots/ (时间戳: {t_str})")
 
     def process_loop(self):
+        if getattr(self, '_is_processing_frame', False):
+            return
+        self._is_processing_frame = True
+        try:
+            self._process_loop_body()
+        finally:
+            self._is_processing_frame = False
+
+    def _process_loop_body(self):
         if not self.selected_hwnd or not win32gui.IsWindow(self.selected_hwnd):
             return
 
@@ -1983,25 +1993,29 @@ class DetectorApp(QMainWindow):
                             step_str = f"步骤: {cur_idx+1}/{len(active_path)} ({active_path[cur_idx].action} 目标X={active_path[cur_idx].target_x})" if (active_path and cur_idx < len(active_path)) else "无执行路径/等待规划"
                             self.log(f"【🌟 A* 寻路监控】世界绝对坐标: ({xw}, {yw}) | 所在: {fh_str} | {step_str}")
 
-            # 渲染到 lbl_minimap_display
-            mh, mw, mch = dashboard_bgr.shape
-            m_bytes = mch * mw
-            m_rgb = cv2.cvtColor(dashboard_bgr, cv2.COLOR_BGR2RGB)
-            m_qimg = QImage(m_rgb.data, mw, mh, m_bytes, QImage.Format_RGB888)
-            m_pixmap = QPixmap.fromImage(m_qimg)
-            
-            scaled_m_pixmap = m_pixmap.scaled(
-                self.lbl_minimap_display.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            
-            m_sw = scaled_m_pixmap.width()
-            m_sh = scaled_m_pixmap.height()
-            if mw > 0:
-                self.lbl_minimap_display.img_scale_ratio = m_sw / float(mw)
-            self.lbl_minimap_display.img_offset_x = (self.lbl_minimap_display.width() - m_sw) // 2
-            self.lbl_minimap_display.img_offset_y = (self.lbl_minimap_display.height() - m_sh) // 2
-            
-            self.lbl_minimap_display.setPixmap(scaled_m_pixmap)
+            # 渲染到 lbl_minimap_display (增加尺寸保护与缩放加速)
+            mlbl_w = self.lbl_minimap_display.width()
+            mlbl_h = self.lbl_minimap_display.height()
+            if mlbl_w > 10 and mlbl_h > 10:
+                mh, mw, mch = dashboard_bgr.shape
+                if mw > 0 and mh > 0:
+                    m_bytes = mch * mw
+                    m_rgb = cv2.cvtColor(dashboard_bgr, cv2.COLOR_BGR2RGB)
+                    m_qimg = QImage(m_rgb.data, mw, mh, m_bytes, QImage.Format_RGB888)
+                    m_pixmap = QPixmap.fromImage(m_qimg)
+                    
+                    transform_mode = Qt.FastTransformation if getattr(self, '_is_resizing', False) else Qt.SmoothTransformation
+                    scaled_m_pixmap = m_pixmap.scaled(
+                        self.lbl_minimap_display.size(), Qt.KeepAspectRatio, transform_mode
+                    )
+                    
+                    m_sw = scaled_m_pixmap.width()
+                    m_sh = scaled_m_pixmap.height()
+                    self.lbl_minimap_display.img_scale_ratio = m_sw / float(mw)
+                    self.lbl_minimap_display.img_offset_x = (mlbl_w - m_sw) // 2
+                    self.lbl_minimap_display.img_offset_y = (mlbl_h - m_sh) // 2
+                    
+                    self.lbl_minimap_display.setPixmap(scaled_m_pixmap)
 
         # 2.5 测谎仪 / 符文图形验证弹窗毫秒级检测 (最高优先级安全拦截)
         is_captcha = False
@@ -2224,17 +2238,19 @@ class DetectorApp(QMainWindow):
             lbl_w = self.lbl_display.width()
             lbl_h = self.lbl_display.height()
 
-            scaled_pixmap = pixmap.scaled(
-                self.lbl_display.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
+            if lbl_w > 10 and lbl_h > 10 and w > 0 and h > 0:
+                transform_mode = Qt.FastTransformation if getattr(self, '_is_resizing', False) else Qt.SmoothTransformation
+                scaled_pixmap = pixmap.scaled(
+                    self.lbl_display.size(), Qt.KeepAspectRatio, transform_mode
+                )
 
-            sw = scaled_pixmap.width()
-            sh = scaled_pixmap.height()
-            self.lbl_display.img_scale_ratio = sw / float(w)
-            self.lbl_display.img_offset_x = (lbl_w - sw) // 2
-            self.lbl_display.img_offset_y = (lbl_h - sh) // 2
+                sw = scaled_pixmap.width()
+                sh = scaled_pixmap.height()
+                self.lbl_display.img_scale_ratio = sw / float(w)
+                self.lbl_display.img_offset_x = (lbl_w - sw) // 2
+                self.lbl_display.img_offset_y = (lbl_h - sh) // 2
 
-            self.lbl_display.setPixmap(scaled_pixmap)
+                self.lbl_display.setPixmap(scaled_pixmap)
 
         # 5. 计算 FPS 并更新底部状态栏
         self.fps_count += 1
@@ -2250,6 +2266,15 @@ class DetectorApp(QMainWindow):
         self.lbl_status.setText(
             f"FPS: {self.fps_display:.1f} | 寻路模式:{nav_mode_str} | 小地图坐标:{pos_str} | 传统节点:{len(self.route_manager.nodes)}个{rec_str} | 检出目标:{len(detections)}个"
         )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._is_resizing = True
+        if not hasattr(self, '_resize_timer'):
+            self._resize_timer = QTimer(self)
+            self._resize_timer.setSingleShot(True)
+            self._resize_timer.timeout.connect(lambda: setattr(self, '_is_resizing', False))
+        self._resize_timer.start(250)
 
     def closeEvent(self, event):
         try:

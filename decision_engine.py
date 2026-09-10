@@ -2,6 +2,7 @@ import time
 import math
 import os
 import random
+import threading
 
 from map_parser import MapParser
 from a_star_pathfinder import AStarPathfinder, NavAction, NavStep
@@ -939,34 +940,43 @@ class DecisionEngine:
                 else:
                     self.gc.clear_movement()  # 垂直正对绳子，清除横向按键直跳
 
-                # 按钮间隔 50ms 确保跳跃触发生效
-                time.sleep(0.05)
+                # 异步后台执行起跳挂绳动作，避免主 GUI 线程 time.sleep 冻结
+                threading.Thread(
+                    target=self._exec_rope_jump,
+                    args=(dir_key, jump_key),
+                    daemon=True
+                ).start()
 
-                # 触发起跳
-                self.gc.tap_key(jump_key)
-                
-                # 若有方向则进行微量弧线靠拢 (80ms)，直跳则直接按住 UP
-                if dir_key:
-                    time.sleep(0.08)
-                    self.gc.press_key("UP")
-                    time.sleep(0.08)
-                    self.gc.release_key(dir_key)
-                else:
-                    time.sleep(0.05)
-                    self.gc.press_key("UP")
+    def _exec_rope_jump(self, dir_key, jump_key):
+        """后台异步执行跳绳动作时序"""
+        # 按钮间隔 50ms 确保跳跃触发生效
+        time.sleep(0.05)
 
-                # 超时防卡死兜底：如果尝试 6 次都没挂上绳子
-                if self.climb_attempt > 6:
-                    print("【防卡死】多次起跳纵向坐标未改变，随机侧跳破局...")
-                    self.gc.release_key("UP")
-                    self.gc.press_key("RIGHT")
-                    self.gc.tap_key(jump_key)
-                    time.sleep(0.3)
-                    self.gc.release_key("RIGHT")
-                    
-                    self.climb_attempt = 0
-                    self.is_climbing_rope = False
-                    self.climb_caught = False
+        # 触发起跳
+        self.gc.tap_key(jump_key, blocking=True)
+        
+        # 若有方向则进行微量弧线靠拢 (80ms)，直跳则直接按住 UP
+        if dir_key:
+            time.sleep(0.08)
+            self.gc.press_key("UP")
+            time.sleep(0.08)
+            self.gc.release_key(dir_key)
+        else:
+            time.sleep(0.05)
+            self.gc.press_key("UP")
+
+        # 超时防卡死兜底：如果尝试 6 次都没挂上绳子
+        if self.climb_attempt > 6:
+            print("【防卡死】多次起跳纵向坐标未改变，随机侧跳破局...")
+            self.gc.release_key("UP")
+            self.gc.press_key("RIGHT")
+            self.gc.tap_key(jump_key, blocking=True)
+            time.sleep(0.3)
+            self.gc.release_key("RIGHT")
+            
+            self.climb_attempt = 0
+            self.is_climbing_rope = False
+            self.climb_caught = False
 
     def _execute_combat_moving(self, p_pos, m_pos):
         if not p_pos or not m_pos:

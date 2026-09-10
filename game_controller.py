@@ -6,6 +6,8 @@ import math
 import random
 import ctypes
 import win32gui
+import heapq
+import threading
 from ctypes import wintypes
 
 # 启用 Windows 多媒体 1ms 物理高精度时钟，破除 15.6ms 时钟中断栅格
@@ -224,6 +226,55 @@ def find_pico_port(preferred_port=None):
     return "COM3"
 
 
+class KeyReleaseScheduler:
+    """高精度非阻塞按键释放调度器，由独立轻量后台线程调度按键抬起，彻底避免主 GUI 线程 time.sleep 冻结"""
+    def __init__(self, release_callback):
+        self.release_callback = release_callback
+        self._lock = threading.Lock()
+        self._heap = []  # (release_time_monotonic, key_name)
+        self._active_holds = {}  # key_name -> 最新计划释放时间戳
+        self._wake_event = threading.Event()
+        self._running = True
+        self._thread = threading.Thread(target=self._worker, daemon=True, name="KeyReleaseScheduler")
+        self._thread.start()
+
+    def schedule(self, key_name, delay):
+        release_time = time.monotonic() + delay
+        with self._lock:
+            self._active_holds[key_name] = max(self._active_holds.get(key_name, 0.0), release_time)
+            heapq.heappush(self._heap, (release_time, key_name))
+            self._wake_event.set()
+
+    def clear(self):
+        with self._lock:
+            self._heap.clear()
+            self._active_holds.clear()
+
+    def _worker(self):
+        while self._running:
+            keys_to_release = []
+            timeout = None
+            with self._lock:
+                now = time.monotonic()
+                while self._heap and self._heap[0][0] <= now:
+                    rel_time, key = heapq.heappop(self._heap)
+                    # 仅当释放时间已达到或超过该键的最晚保持时间时才真正释放，避免被覆盖的早期事件提前释放按键
+                    if rel_time >= self._active_holds.get(key, 0.0) - 0.005:
+                        keys_to_release.append(key)
+                        self._active_holds.pop(key, None)
+                if self._heap:
+                    timeout = max(0.001, self._heap[0][0] - now)
+
+            for k in keys_to_release:
+                try:
+                    self.release_callback(k)
+                except Exception:
+                    pass
+
+            self._wake_event.wait(timeout=timeout if timeout is not None else 0.5)
+            self._wake_event.clear()
+
+
 class GameController:
     """
     基于 DirectInput 扫描码 / 树莓派 Pico USB 物理键盘 / 树莓派 3B+ 蓝牙物理键盘 与拟人化动力学抖动的按键控制器
@@ -253,6 +304,9 @@ class GameController:
         self.jitter = HumanJitter()
         self.mouse_drifter = HumanMouseDrifter()
 
+        self._lock = threading.Lock()
+        self.scheduler = KeyReleaseScheduler(self.release_key)
+
         self.udp_sock = None
         self.pico_ser = None
 
@@ -273,7 +327,6 @@ class GameController:
                 time.sleep(0.1)
                 self.pico_ser.reset_input_buffer()
                 self.pico_ser.write(b"PING\n")
-                self.pico_ser.flush()
                 resp = self.pico_ser.readline().decode('utf-8', errors='ignore').strip()
                 print(f"[GameController] [模式] 树莓派 Pico USB 硬件物理键盘已连接 (端口: {port}, 握手: {resp})")
             except Exception as e:
@@ -298,15 +351,16 @@ class GameController:
 
         # 切换前释放所有已按下的按键，避免卡键
         self.release_all_keys()
-        if self.pico_ser:
-            try:
-                self.pico_ser.close()
-            except Exception:
-                pass
-            self.pico_ser = None
+        with self._lock:
+            if self.pico_ser:
+                try:
+                    self.pico_ser.close()
+                except Exception:
+                    pass
+                self.pico_ser = None
 
-        self.mode = new_mode
-        self._init_backend()
+            self.mode = new_mode
+            self._init_backend()
 
         # 同步持久化写入 runtime_config.json
         cfg_path = os.path.join(os.path.dirname(__file__), "runtime_config.json")
@@ -322,70 +376,81 @@ class GameController:
             print(f"[GameController] 持久化保存配置异常: {e}")
 
     def press_key(self, key_name):
-        """按下按键"""
+        """按下按键 (线程安全)"""
         key_name = key_name.upper()
-        if key_name not in self.pressed_keys:
-            self.pressed_keys.add(key_name)
+        with self._lock:
+            if key_name not in self.pressed_keys:
+                self.pressed_keys.add(key_name)
 
-        if self.mode == "pico" and self.pico_ser:
-            try:
-                self.pico_ser.write(f"P:{key_name}\n".encode('utf-8'))
-                self.pico_ser.flush()
-            except Exception as e:
-                print(f"[GameController] Pico 发送 P:{key_name} 异常: {e}")
+            if self.mode == "pico" and self.pico_ser:
+                try:
+                    if self.pico_ser.in_waiting > 0:
+                        self.pico_ser.reset_input_buffer()
+                    self.pico_ser.write(f"P:{key_name}\n".encode('utf-8'))
+                except Exception as e:
+                    print(f"[GameController] Pico 发送 P:{key_name} 异常: {e}")
 
-        elif self.mode == "bluetooth" and self.udp_sock:
-            try:
-                self.udp_sock.sendto(f"P:{key_name}".encode('utf-8'), (self.rpi_ip, self.rpi_port))
-            except Exception as e:
-                print(f"[GameController] 蓝牙发送 P:{key_name} 异常: {e}")
+            elif self.mode == "bluetooth" and self.udp_sock:
+                try:
+                    self.udp_sock.sendto(f"P:{key_name}".encode('utf-8'), (self.rpi_ip, self.rpi_port))
+                except Exception as e:
+                    print(f"[GameController] 蓝牙发送 P:{key_name} 异常: {e}")
 
-        else:
-            scan_code = DIK_KEYS.get(key_name)
-            if scan_code:
-                PressKey(scan_code)
             else:
-                print(f"[GameController] 警告: 找不到按键 {key_name} 的 DirectInput 扫描码！")
+                scan_code = DIK_KEYS.get(key_name)
+                if scan_code:
+                    PressKey(scan_code)
+                else:
+                    print(f"[GameController] 警告: 找不到按键 {key_name} 的 DirectInput 扫描码！")
 
     def release_key(self, key_name):
-        """释放按键"""
+        """释放按键 (线程安全)"""
         key_name = key_name.upper()
-        if key_name in self.pressed_keys:
-            self.pressed_keys.remove(key_name)
+        with self._lock:
+            if key_name in self.pressed_keys:
+                self.pressed_keys.remove(key_name)
 
-        if self.mode == "pico" and self.pico_ser:
-            try:
-                self.pico_ser.write(f"R:{key_name}\n".encode('utf-8'))
-                self.pico_ser.flush()
-            except Exception as e:
-                print(f"[GameController] Pico 发送 R:{key_name} 异常: {e}")
+            if self.mode == "pico" and self.pico_ser:
+                try:
+                    if self.pico_ser.in_waiting > 0:
+                        self.pico_ser.reset_input_buffer()
+                    self.pico_ser.write(f"R:{key_name}\n".encode('utf-8'))
+                except Exception as e:
+                    print(f"[GameController] Pico 发送 R:{key_name} 异常: {e}")
 
-        elif self.mode == "bluetooth" and self.udp_sock:
-            try:
-                self.udp_sock.sendto(f"R:{key_name}".encode('utf-8'), (self.rpi_ip, self.rpi_port))
-            except Exception as e:
-                print(f"[GameController] 蓝牙发送 R:{key_name} 异常: {e}")
+            elif self.mode == "bluetooth" and self.udp_sock:
+                try:
+                    self.udp_sock.sendto(f"R:{key_name}".encode('utf-8'), (self.rpi_ip, self.rpi_port))
+                except Exception as e:
+                    print(f"[GameController] 蓝牙发送 R:{key_name} 异常: {e}")
 
-        else:
-            scan_code = DIK_KEYS.get(key_name)
-            if scan_code:
-                ReleaseKey(scan_code)
+            else:
+                scan_code = DIK_KEYS.get(key_name)
+                if scan_code:
+                    ReleaseKey(scan_code)
 
-    def tap_key(self, key_name, duration=None):
+    def tap_key(self, key_name, duration=None, blocking=False):
         """
         点按按键 (拟人化持续时间)
-        若 duration 为 None，则自动由 HumanJitter 计算对数正态抖动时长
+        默认以异步非阻塞模式执行 (blocking=False)，由后台 KeyReleaseScheduler 调度释放，
+        彻底消除主 GUI 线程的 time.sleep 冻结与卡死未响应
         """
         if duration is None:
             duration = self.jitter.get_press_duration()
         self.press_key(key_name)
-        time.sleep(duration)
-        self.release_key(key_name)
+        if blocking:
+            time.sleep(duration)
+            self.release_key(key_name)
+        else:
+            self.scheduler.schedule(key_name, duration)
 
     def combo_tap(self, first_key, second_key):
         """
-        拟人化组合键 (非对齐先后差 + 重叠释放)
+        拟人化组合键 (非对齐先后差 + 重叠释放) - 异步非阻塞线程执行
         """
+        threading.Thread(target=self._exec_combo_tap, args=(first_key, second_key), daemon=True).start()
+
+    def _exec_combo_tap(self, first_key, second_key):
         offset = self.jitter.get_combo_offset()
         first_hold = self.jitter.get_press_duration()
         second_hold = self.jitter.get_press_duration()
@@ -405,22 +470,26 @@ class GameController:
 
     def release_all_keys(self):
         """释放所有当前按下的按键"""
-        if self.mode == "pico" and self.pico_ser:
-            try:
-                self.pico_ser.write(b"C:CLEAR\n")
-                self.pico_ser.flush()
-            except Exception:
-                pass
-        elif self.mode == "bluetooth" and self.udp_sock:
-            try:
-                self.udp_sock.sendto(b"C:CLEAR", (self.rpi_ip, self.rpi_port))
-            except Exception:
-                pass
-        else:
-            for k in list(self.pressed_keys):
-                scan_code = DIK_KEYS.get(k)
-                if scan_code:
-                    ReleaseKey(scan_code)
+        self.scheduler.clear()
+        with self._lock:
+            if self.mode == "pico" and self.pico_ser:
+                try:
+                    if self.pico_ser.in_waiting > 0:
+                        self.pico_ser.reset_input_buffer()
+                    self.pico_ser.write(b"C:CLEAR\n")
+                except Exception:
+                    pass
+            elif self.mode == "bluetooth" and self.udp_sock:
+                try:
+                    self.udp_sock.sendto(b"C:CLEAR", (self.rpi_ip, self.rpi_port))
+                except Exception:
+                    pass
+            else:
+                for k in list(self.pressed_keys):
+                    scan_code = DIK_KEYS.get(k)
+                    if scan_code:
+                        ReleaseKey(scan_code)
+            self.pressed_keys.clear()
         self.pressed_keys.clear()
 
     def clear_movement(self):
