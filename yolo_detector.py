@@ -41,6 +41,7 @@ from minimap_tracker import MinimapTracker, RouteManager, PathNode, DEFAULT_ROUT
 from game_controller import GameController, find_pico_port
 from decision_engine import DecisionEngine
 from captcha_detector import CaptchaAlertDetector, BotSessionLogger, get_system_volume, set_system_volume
+from disconnect_detector import DisconnectAlertDetector
 from auto_buff_manager import AutoBuffManager
 from player_status_tracker import PlayerStatusTracker
 
@@ -218,8 +219,10 @@ class DetectorApp(QMainWindow):
         self.game_controller = GameController()
         self.decision_engine = DecisionEngine(self.game_controller, self.route_manager)
         self.captcha_detector = CaptchaAlertDetector()
+        self.disconnect_detector = DisconnectAlertDetector()
         self.session_logger = BotSessionLogger()
         self.last_captcha_log_time = 0.0
+        self.last_dc_log_time = 0.0
         self.auto_buff_manager = AutoBuffManager(self.game_controller)
 
         # 4. 加载 YOLO 权重
@@ -738,6 +741,26 @@ class DetectorApp(QMainWindow):
         h_captcha.addWidget(self.btn_test_captcha_alarm)
 
         strat_layout.addLayout(h_captcha)
+
+        # 5.1 掉线/服务器连接断开弹窗自动识别报警行
+        h_disconnect = QHBoxLayout()
+        self.chk_disconnect_alert = QCheckBox("⚠️ 开启掉线/服务器连接错误报警")
+        self.chk_disconnect_alert.setChecked(True)
+        self.chk_disconnect_alert.setStyleSheet("color: #FF7043; font-weight: bold;")
+        h_disconnect.addWidget(self.chk_disconnect_alert)
+
+        self.chk_disconnect_volume = QCheckBox("🔊 报警调高音量至80%(3秒后恢复)")
+        self.chk_disconnect_volume.setChecked(True)
+        self.chk_disconnect_volume.setStyleSheet("color: #FFA726; font-weight: bold;")
+        h_disconnect.addWidget(self.chk_disconnect_volume)
+
+        self.btn_test_disconnect_alarm = QPushButton("🎵 掉线音乐测试")
+        self.btn_test_disconnect_alarm.setFixedHeight(26)
+        self.btn_test_disconnect_alarm.setStyleSheet("background-color: #37474F; color: #ECEFF1; font-weight: bold; padding: 2px 8px;")
+        self.btn_test_disconnect_alarm.clicked.connect(self.test_disconnect_alarm)
+        h_disconnect.addWidget(self.btn_test_disconnect_alarm)
+
+        strat_layout.addLayout(h_disconnect)
 
         # 6. 持续 Buff 技能动态列表
         h_buff_header = QHBoxLayout()
@@ -1351,9 +1374,12 @@ class DetectorApp(QMainWindow):
 
             # 1. 记录系统主音量作为打怪基准音量
             cur_vol = get_system_volume()
-            if cur_vol is not None and hasattr(self, 'captcha_detector') and self.captcha_detector:
-                self.captcha_detector.set_baseline_volume(cur_vol)
-                self.log(f"🔊【系统音量监控】已锁定打怪初始音量: {cur_vol * 100:.0f}% (测谎报警时调高至80%并在5秒后自动恢复)")
+            if cur_vol is not None:
+                if hasattr(self, 'captcha_detector') and self.captcha_detector:
+                    self.captcha_detector.set_baseline_volume(cur_vol)
+                if hasattr(self, 'disconnect_detector') and self.disconnect_detector:
+                    self.disconnect_detector.set_baseline_volume(cur_vol)
+                self.log(f"🔊【系统音量监控】已锁定打怪初始音量: {cur_vol * 100:.0f}% (测谎报警80%/5秒恢复，掉线报警80%/3秒恢复)")
 
             # 2. 创建并保存本次打怪 Session 本地 JSON 日志
             if hasattr(self, 'session_logger') and self.session_logger:
@@ -1386,6 +1412,8 @@ class DetectorApp(QMainWindow):
             # 2. 确保系统音量平稳恢复至打怪前基准音量
             if hasattr(self, 'captcha_detector') and self.captcha_detector:
                 self.captcha_detector.restore_volume()
+            if hasattr(self, 'disconnect_detector') and self.disconnect_detector:
+                self.disconnect_detector.restore_volume()
 
             self.log("【打怪总开关】已停止打怪。")
 
@@ -1617,6 +1645,8 @@ class DetectorApp(QMainWindow):
                 "danger_margin": self.sp_danger_margin.value(),
                 "captcha_alert": self.chk_captcha_alert.isChecked(),
                 "captcha_volume_boost": self.chk_captcha_volume.isChecked(),
+                "disconnect_alert": self.chk_disconnect_alert.isChecked(),
+                "disconnect_volume_boost": self.chk_disconnect_volume.isChecked(),
                 "status_monitor_enabled": self.chk_status_monitor.isChecked(),
                 "hp_threshold": self.sp_hp_thresh.value(),
                 "hp_key": self.txt_hp_key.text().strip(),
@@ -1703,6 +1733,10 @@ class DetectorApp(QMainWindow):
                 self.chk_captcha_alert.setChecked(bool(cfg["captcha_alert"]))
             if "captcha_volume_boost" in cfg:
                 self.chk_captcha_volume.setChecked(bool(cfg["captcha_volume_boost"]))
+            if "disconnect_alert" in cfg:
+                self.chk_disconnect_alert.setChecked(bool(cfg["disconnect_alert"]))
+            if "disconnect_volume_boost" in cfg:
+                self.chk_disconnect_volume.setChecked(bool(cfg["disconnect_volume_boost"]))
 
             # 载入状态守护与喝药统计配置
             if "status_monitor_enabled" in cfg:
@@ -1768,6 +1802,21 @@ class DetectorApp(QMainWindow):
                 self.log("🔔【报警音量测试】已触发测试警报：播放高频警报蜂鸣（未勾选自动调高音量）。")
         else:
             self.log("⚠️【报警音量测试】测谎检测器未初始化！")
+
+    def test_disconnect_alarm(self):
+        """手动测试掉线报警音乐与自动调高音量至80% (并在3秒后自动恢复)"""
+        if hasattr(self, 'disconnect_detector') and self.disconnect_detector is not None:
+            boost_vol = self.chk_disconnect_volume.isChecked()
+            cur_v = get_system_volume()
+            if self.disconnect_detector.baseline_volume is None and cur_v is not None:
+                self.disconnect_detector.set_baseline_volume(cur_v)
+            self.disconnect_detector.trigger_alarm(boost_volume=boost_vol, target_volume=80, force=True, restore_delay=3.0)
+            if boost_vol:
+                self.log("🎵【掉线音乐测试】已触发专用掉线警报音乐：已自动调高系统音量至 80%，3秒后将自动恢复！")
+            else:
+                self.log("🎵【掉线音乐测试】已触发专用掉线警报音乐（未勾选自动调高音量）。")
+        else:
+            self.log("⚠️【掉线音乐测试】掉线检测器未初始化！")
 
     def add_record_node(self, action_type="WALK"):
         pos = self.player_map_pos or getattr(self, "last_valid_player_map_pos", None)
@@ -2072,6 +2121,35 @@ class DetectorApp(QMainWindow):
                         cv2.putText(game_frame, f"CAPTCHA ALERT [{score:.2f}]", (cx, max(20, cy - 8)),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
+        # 2.6 游戏掉线 / 与服务器连接发生错误弹窗检测 (高危安全拦截)
+        is_dc = False
+        if hasattr(self, 'disconnect_detector') and self.chk_disconnect_alert.isChecked():
+            is_dc, dc_boxes = self.disconnect_detector.detect(game_frame)
+            if is_dc:
+                # 紧急制动：释放所有按键并重置决策引擎
+                if self.game_controller:
+                    self.game_controller.release_all_keys()
+                if self.decision_engine:
+                    self.decision_engine.reset()
+
+                # 触发专用掉线警报音乐 (自动调高系统音量至 80%，并在 3 秒后自动恢复)
+                boost_vol = hasattr(self, 'chk_disconnect_volume') and self.chk_disconnect_volume.isChecked()
+                self.disconnect_detector.trigger_alarm(boost_volume=boost_vol, target_volume=80, restore_delay=3.0)
+
+                # 限流 2.0s 打印掉线警告日志
+                now_time = time.time()
+                if now_time - getattr(self, 'last_dc_log_time', 0.0) > 2.0:
+                    self.last_dc_log_time = now_time
+                    vol_hint = "（已自动调高系统音量至80%，3秒后恢复）" if boost_vol else ""
+                    self.log(f"⚠️【掉线警报】检测到游戏掉线/与服务器连接断开弹窗！{vol_hint}已紧急制动按键，请及时处理！")
+
+                # 在监控画面中绘制橙色警报边框与文字
+                if self.is_monitoring_preview:
+                    for (dx, dy, dw, dh, score) in dc_boxes:
+                        cv2.rectangle(game_frame, (dx, dy), (dx + dw, dy + dh), (0, 140, 255), 3)
+                        cv2.putText(game_frame, f"DISCONNECT ALERT [{score:.2f}]", (dx, max(20, dy - 8)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 140, 255), 2)
+
         # 2.8 角色生命/魔法/经验状态更新与自动喝药守护 (被动识别每帧高频运行)
         if hasattr(self, 'status_tracker'):
             hp_pct, mp_pct, exp_pct = self.status_tracker.update_hp_mp_exp(game_frame)
@@ -2305,6 +2383,8 @@ class DetectorApp(QMainWindow):
                     self.session_logger.end_session()
                 if hasattr(self, 'captcha_detector') and self.captcha_detector:
                     self.captcha_detector.restore_volume()
+                if hasattr(self, 'disconnect_detector') and self.disconnect_detector:
+                    self.disconnect_detector.restore_volume()
         except Exception as e:
             print(f"[DetectorApp.closeEvent] 退出清理异常: {e}")
         super().closeEvent(event)
