@@ -1,0 +1,39 @@
+# ===================================================================
+# 怪物优先打怪权重配置文件 (Monster Priority Configuration)
+# 
+# 格式规则:
+#   每行一个 key-value 对: 怪物名称 = 权重 (也可以用 怪物名称: 权重)
+#   - 默认权重均为 1.0
+#   - 权重越高，在接敌/寻怪范围内越优先被锁定和攻击
+#   - 权重相同（包括默认全部为 1.0）时，系统自动按照【距离角色最近优先】进行仲裁
+#   - 遇到贴脸危险怪物时，系统自动进行自卫清障，防止被近身碰撞
+#   - 注意: 平台打怪模式的避险机制具有最高绝对优先级，绝不因怪物权重而掉落平台
+# 
+# 修改后即时生效 (支持热重载，无需重启软件)
+# ===================================================================
+
+orange_mushroom = 1.0
+red_snail = 1.0
+slime = 1.0
+bubbling = 1.0
+horny_mushroom = 1.0
+zombie_mushroom = 1.0
+axe_stump = 1.0
+wild_boar = 1.0
+pig = 1.0
+ribbon_pig = 1.0
+fire_boar = 1.0
+jr_necki = 1.0
+croco = 1.0
+drake = 1.0
+evil_eye = 1.0
+cold_eye = 1.0
+jr_wraith = 1.0
+wooden_mask = 1.0
+lupin = 1.0
+rocky_mask = 1.0
+crab = 1.0
+tauromacis = 1.0
+dark_stone_golem = 1.0
+zombie_lupin = 1.0
+wraith = 1.0

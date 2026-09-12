@@ -51,6 +51,7 @@ FALLBACK_MODEL = os.path.join(BASE_DIR, "yolov8n.pt")
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
 DATASET_IMG_DIR = os.path.join(DATASET_DIR, "raw_images")
 DEFAULT_COMBAT_CONFIG_PATH = os.path.join(DATASET_DIR, "combat_config.json")
+DEFAULT_MONSTER_PRIORITY_PATH = os.path.join(DATASET_DIR, "monster_priority.txt")
 os.makedirs(DATASET_IMG_DIR, exist_ok=True)
 
 
@@ -749,6 +750,11 @@ class DetectorApp(QMainWindow):
         self.btn_save_combat_cfg = QPushButton("💾 保存技能配置")
         self.btn_save_combat_cfg.clicked.connect(self.save_combat_config)
         h_buff_header.addWidget(self.btn_save_combat_cfg)
+
+        self.btn_edit_priority = QPushButton("🎯 怪物优先级")
+        self.btn_edit_priority.setToolTip("打开怪物优先打怪权重配置文件 (monster_priority.txt)")
+        self.btn_edit_priority.clicked.connect(self.open_monster_priority_config)
+        h_buff_header.addWidget(self.btn_edit_priority)
 
         strat_layout.addLayout(h_buff_header)
 
@@ -1635,6 +1641,22 @@ class DetectorApp(QMainWindow):
         except Exception as e:
             self.log(f"【技能配置保存失败】: {e}")
 
+    def open_monster_priority_config(self):
+        """打开怪物优先打怪权重配置文件"""
+        try:
+            os.makedirs(DATASET_DIR, exist_ok=True)
+            if not os.path.exists(DEFAULT_MONSTER_PRIORITY_PATH):
+                with open(DEFAULT_MONSTER_PRIORITY_PATH, "w", encoding="utf-8") as f:
+                    f.write("# 怪物优先打怪权重配置文件 (格式: 怪物名称 = 权重)\n")
+            if os.name == 'nt':
+                os.startfile(DEFAULT_MONSTER_PRIORITY_PATH)
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", DEFAULT_MONSTER_PRIORITY_PATH])
+            self.log(f"【怪物优先级】已打开配置文件: {DEFAULT_MONSTER_PRIORITY_PATH}")
+        except Exception as e:
+            self.log(f"【怪物优先级】打开配置文件失败: {e}")
+
     def load_combat_config(self):
         """从 JSON 文件载入攻击与 Buff 技能配置"""
         if not os.path.exists(DEFAULT_COMBAT_CONFIG_PATH):
@@ -2128,7 +2150,7 @@ class DetectorApp(QMainWindow):
                         else:
                             # 其他默认认为是怪物 (排除 rope 和 portal)
                             if class_name not in ["rope", "portal"]:
-                                screen_monsters.append((center_x, center_y, x1, y1, x2, y2))
+                                screen_monsters.append((center_x, center_y, x1, y1, x2, y2, class_name))
 
                         if self.is_monitoring_preview:
                             color = self.colors[cls_id % len(self.colors)]
