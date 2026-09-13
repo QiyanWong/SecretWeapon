@@ -44,7 +44,8 @@ CLASS_NAMES = [
     'tauromacis',
     'dark_stone_golem',
     'zombie_lupin',
-    'wraith'
+    'wraith',
+    'jr_boogie'
 ]
 
 
