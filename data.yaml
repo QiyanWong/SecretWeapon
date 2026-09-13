@@ -26,6 +26,7 @@ names:
   24: dark_stone_golem
   25: zombie_lupin
   26: wraith
+  27: jr_boogie
 path: ./dataset
 train: images/train
 val: images/val

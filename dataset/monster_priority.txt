@@ -37,3 +37,5 @@ tauromacis = 1.0
 dark_stone_golem = 2.0
 zombie_lupin = 1.0
 wraith = 1.0
+jr_boogie = 1.0
+幼魔精灵 = 1.0
