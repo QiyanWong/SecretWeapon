@@ -34,6 +34,6 @@ lupin = 1.0
 rocky_mask = 1.0
 crab = 1.0
 tauromacis = 1.0
-dark_stone_golem = 1.0
+dark_stone_golem = 2.0
 zombie_lupin = 1.0
 wraith = 1.0
