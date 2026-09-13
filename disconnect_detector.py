@@ -56,6 +56,7 @@ class DisconnectAlertDetector:
 
         # 报警控制
         self.is_enabled = True
+        self.auto_fight_enabled = False  # 仅在自动打怪开启时触发警报
         self.last_alarm_time = 0.0
         self.alarm_cooldown = 2.0
         self.is_alarm_playing = False
@@ -69,6 +70,10 @@ class DisconnectAlertDetector:
         self.scales = [1.0, 0.85, 0.9, 1.1, 1.15, 1.25]
 
         self.load_templates()
+
+    def set_auto_fight_enabled(self, enabled: bool):
+        """设置自动打怪运行状态 (True: 开启打怪, False: 停止打怪)"""
+        self.auto_fight_enabled = bool(enabled)
 
     def set_baseline_volume(self, vol):
         """记录打怪开始时的系统音量作为基准音量"""
@@ -236,9 +241,13 @@ class DisconnectAlertDetector:
         参数:
             boost_volume: 是否自动调高系统音量至 80% 并解除静音
             target_volume: 目标系统音量百分比 (默认 80)
-            force: 是否忽略冷却时间强制触发 (测试用)
+            force: 是否忽略打怪状态与冷却时间强制触发 (测试用)
             restore_delay: 恢复至基准音量的延时秒数 (要求 3.0 秒)
         """
+        # 仅在自动打怪处于开启时才触发警报 (除非 force=True 强制试听测试)
+        if not force and not self.auto_fight_enabled:
+            return
+
         now = time.time()
         if not force:
             if now - self.last_alarm_time < self.alarm_cooldown or self.is_alarm_playing:

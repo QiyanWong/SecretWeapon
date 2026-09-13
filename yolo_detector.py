@@ -744,9 +744,10 @@ class DetectorApp(QMainWindow):
 
         # 5.1 掉线/服务器连接断开弹窗自动识别报警行
         h_disconnect = QHBoxLayout()
-        self.chk_disconnect_alert = QCheckBox("⚠️ 开启掉线/服务器连接错误报警")
+        self.chk_disconnect_alert = QCheckBox("⚠️ 开启掉线/服务器连接错误报警(打怪生效)")
         self.chk_disconnect_alert.setChecked(True)
         self.chk_disconnect_alert.setStyleSheet("color: #FF7043; font-weight: bold;")
+        self.chk_disconnect_alert.setToolTip("仅在【⚡ 开始打怪】开启期间，若检测到游戏断开连接或掉线弹窗，触发专属警报并紧急制动按键。")
         h_disconnect.addWidget(self.chk_disconnect_alert)
 
         self.chk_disconnect_volume = QCheckBox("🔊 报警调高音量至80%(3秒后恢复)")
@@ -1379,6 +1380,7 @@ class DetectorApp(QMainWindow):
                     self.captcha_detector.set_baseline_volume(cur_vol)
                 if hasattr(self, 'disconnect_detector') and self.disconnect_detector:
                     self.disconnect_detector.set_baseline_volume(cur_vol)
+                    self.disconnect_detector.set_auto_fight_enabled(True)
                 self.log(f"🔊【系统音量监控】已锁定打怪初始音量: {cur_vol * 100:.0f}% (测谎报警80%/5秒恢复，掉线报警80%/3秒恢复)")
 
             # 2. 创建并保存本次打怪 Session 本地 JSON 日志
@@ -1413,6 +1415,7 @@ class DetectorApp(QMainWindow):
             if hasattr(self, 'captcha_detector') and self.captcha_detector:
                 self.captcha_detector.restore_volume()
             if hasattr(self, 'disconnect_detector') and self.disconnect_detector:
+                self.disconnect_detector.set_auto_fight_enabled(False)
                 self.disconnect_detector.restore_volume()
 
             self.log("【打怪总开关】已停止打怪。")
@@ -2121,9 +2124,9 @@ class DetectorApp(QMainWindow):
                         cv2.putText(game_frame, f"CAPTCHA ALERT [{score:.2f}]", (cx, max(20, cy - 8)),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-        # 2.6 游戏掉线 / 与服务器连接发生错误弹窗检测 (高危安全拦截)
+        # 2.6 游戏掉线 / 与服务器连接发生错误弹窗检测 (高危安全拦截，仅在自动打怪开启时生效)
         is_dc = False
-        if hasattr(self, 'disconnect_detector') and self.chk_disconnect_alert.isChecked():
+        if hasattr(self, 'disconnect_detector') and self.chk_disconnect_alert.isChecked() and self.is_bot_running:
             is_dc, dc_boxes = self.disconnect_detector.detect(game_frame)
             if is_dc:
                 # 紧急制动：释放所有按键并重置决策引擎
@@ -2262,7 +2265,7 @@ class DetectorApp(QMainWindow):
                     self.log(f"【Buff 技能定时】自动重发 Buff 技能 [{key}] (本次间隔 {elapsed:.1f}s / 下次目标 {item['target_cd']:.1f}s)")
 
         # 5. 执行自动打怪决策核心
-        if self.is_bot_running:
+        if self.is_bot_running and not is_captcha and not is_dc:
             game_h, game_w, _ = game_frame.shape
             if not screen_player_pos:
                 # 若受击闪烁/扣血无敌导致单帧漏检，优先兜底维持在上一帧已知位置
@@ -2384,6 +2387,7 @@ class DetectorApp(QMainWindow):
                 if hasattr(self, 'captcha_detector') and self.captcha_detector:
                     self.captcha_detector.restore_volume()
                 if hasattr(self, 'disconnect_detector') and self.disconnect_detector:
+                    self.disconnect_detector.set_auto_fight_enabled(False)
                     self.disconnect_detector.restore_volume()
         except Exception as e:
             print(f"[DetectorApp.closeEvent] 退出清理异常: {e}")
