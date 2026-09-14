@@ -57,13 +57,13 @@ CLASS_LIST = [
 CLASS_TO_ID = {name: i for i, name in enumerate(CLASS_LIST)}
 
 # 第三军营的 5 层物理站立平台 Y 坐标 (地图绝对高度)
-# 各层左平台范围 X: [45, 365], 右平台范围 X: [465, 785]
+# 各层左平台范围 X: [35, 375], 右平台范围 X: [455, 795]
 MAP_TIERS = [
-    {"name": "Tier 1 (顶层)", "y": 304, "left": (45, 365), "right": (465, 785)},
-    {"name": "Tier 2 (中高)", "y": 645, "left": (45, 365), "right": (465, 785)},
-    {"name": "Tier 3 (中层)", "y": 972, "left": (45, 365), "right": (465, 785)},
-    {"name": "Tier 4 (中低)", "y": 1258, "left": (45, 365), "right": (465, 785)},
-    {"name": "Tier 5 (底层)", "y": 1593, "left": (45, 365), "right": (465, 785)}
+    {"name": "Tier 1 (顶层)", "y": 304, "left": (35, 375), "right": (455, 795)},
+    {"name": "Tier 2 (中高)", "y": 645, "left": (35, 375), "right": (455, 795)},
+    {"name": "Tier 3 (中层)", "y": 972, "left": (35, 375), "right": (455, 795)},
+    {"name": "Tier 4 (中低)", "y": 1258, "left": (35, 375), "right": (455, 795)},
+    {"name": "Tier 5 (底层)", "y": 1593, "left": (35, 375), "right": (455, 795)}
 ]
 
 
@@ -112,17 +112,23 @@ def load_all_assets():
                 im = Image.open(os.path.join(d, f)).convert('RGBA')
                 mobs[m].append((f, im))
 
-    # 玩家形态
+    # 丰富玩家形态: 整合实录高精度抠图与动作精灵
     players = {'player_left': [], 'player_right': []}
     for p_cls in ['player_left', 'player_right']:
         d = os.path.join(PLAYER_DIR, p_cls)
         for f in os.listdir(d):
             if f.endswith('.png'):
-                # 过滤不合理的文件名匹配
-                if p_cls == 'player_left' and 'right' in f.lower() and 'player_left' not in f and 'plaer_left' not in f:
-                    continue
-                im = Image.open(os.path.join(d, f)).convert('RGBA')
-                players[p_cls].append((f, im))
+                fp = os.path.join(d, f)
+                try:
+                    im = Image.open(fp).convert('RGBA')
+                    # 确保左向朝左，右向朝右
+                    if p_cls == 'player_left' and 'right' in f.lower() and 'real_player' not in f:
+                        im = im.transpose(Image.FLIP_LEFT_RIGHT)
+                    elif p_cls == 'player_right' and 'left' in f.lower() and 'real_player' not in f:
+                        im = im.transpose(Image.FLIP_LEFT_RIGHT)
+                    players[p_cls].append((f, im))
+                except Exception:
+                    pass
 
     # 掉落物
     drops = {}
@@ -136,7 +142,7 @@ def load_all_assets():
     return mobs, players, drops
 
 
-def check_overlap(box1, box2, margin=15):
+def check_overlap(box1, box2, margin=10):
     x1_a, y1_a, x2_a, y2_a = box1
     x1_b, y1_b, x2_b, y2_b = box2
     return not (x2_a + margin < x1_b or x1_a - margin > x2_b or
@@ -144,25 +150,24 @@ def check_overlap(box1, box2, margin=15):
 
 
 def generate_batch(num_images=20):
-    random.seed(100)
-    np.random.seed(100)
+    random.seed(2026)
+    np.random.seed(2026)
 
     mobs_dict, player_dict, drops_dict = load_all_assets()
-    print("=" * 70)
-    print(f"🚀 开始在【第3军营】高质量批量合成 {num_images} 张多姿态全覆盖训练图像...")
+    print("=" * 75)
+    print(f"🚀 开始在【第3军营】高密度批量合成 {num_images} 张包含高丰富度玩家姿态与密集怪物群的训练图像...")
     print(f"   👾 骷髅士兵: {len(mobs_dict['skeleton_soldier'])} 动作帧")
     print(f"   💀 骷髅士官: {len(mobs_dict['officer_skeleton'])} 动作帧")
-    print(f"   🤺 玩家动作: 左向 {len(player_dict['player_left'])} 帧, 右向 {len(player_dict['player_right'])} 帧")
+    print(f"   🤺 玩家形态库: 左向 {len(player_dict['player_left'])} 种, 右向 {len(player_dict['player_right'])} 种 (含实机虎头帽形象/挥刀/警戒/跑动/站立)")
     print(f"   💎 专属掉落物: {list(drops_dict.keys())}")
-    print("=" * 70)
+    print("=" * 75)
 
     camp3_map = Image.open(BG_PATH).convert('RGBA')
     mw, mh = camp3_map.size
     cw, ch = 1280, 720
     map_x = (cw - mw) // 2  # 居中偏移 218px
 
-    # 分布多样的视口高度 (Y 滚动位置: 0 到 mh - ch)
-    # 覆盖从顶层、中高层、中低层到底层全部区域
+    # 视口平移采样
     scroll_positions = np.linspace(0, mh - ch, num_images, dtype=int)
 
     generated_records = []
@@ -171,7 +176,7 @@ def generate_batch(num_images=20):
         img_id = idx + 1
         base_name = f"synth_skeleton_camp3_{img_id:02d}"
 
-        # 1. 裁剪对应摄像机高度的地图，并嵌入居中画布 (两旁为真实宽屏黑色边框)
+        # 1. 裁剪对应摄像机高度的地图并居中放入 1280x720 画布
         crop_map = camp3_map.crop((0, cam_y, mw, cam_y + ch))
         canvas = Image.new('RGBA', (cw, ch), (0, 0, 0, 255))
         canvas.paste(crop_map, (map_x, 0), crop_map)
@@ -180,59 +185,98 @@ def generate_batch(num_images=20):
         visible_tiers = []
         for tier in MAP_TIERS:
             screen_floor = tier['y'] - cam_y
-            if 80 <= screen_floor <= ch - 20:
+            if 90 <= screen_floor <= ch - 20:
                 visible_tiers.append((tier, screen_floor))
 
         if not visible_tiers:
-            # 容错降级
             visible_tiers = [(MAP_TIERS[0], 250)]
 
         placed_boxes = []  # (x1, y1, x2, y2)
         labels = []
         json_shapes = []
 
-        # 3. 在可见平台上放置掉落物 (底层)
+        # 3. 放置掉落物 (底层，每层平台均匀分布金币与肋骨/骨盆)
         for tier_info, s_floor in visible_tiers:
-            if random.random() < 0.85:
-                num_drops = random.randint(1, 3)
-                for _ in range(num_drops):
-                    side = random.choice(['left', 'right'])
-                    min_x, max_x = tier_info[side]
-                    drop_x = map_x + random.randint(min_x + 10, max_x - 30)
-                    drop_y = s_floor - random.randint(10, 25)
-                    dk = random.choice(['rib', 'pelvic_bone', 'gold_coin', 'meso_bills', 'meso_sack', 'bronze_coin'])
-                    if dk in drops_dict:
-                        d_img = drops_dict[dk]
-                        canvas.paste(d_img, (drop_x, drop_y), d_img)
+            num_drops = random.randint(2, 4)
+            for _ in range(num_drops):
+                side = random.choice(['left', 'right'])
+                min_x, max_x = tier_info[side]
+                drop_x = map_x + random.randint(min_x + 5, max_x - 30)
+                drop_y = s_floor - random.randint(8, 22)
+                dk = random.choice(['rib', 'pelvic_bone', 'gold_coin', 'meso_bills', 'meso_sack', 'bronze_coin'])
+                if dk in drops_dict:
+                    d_img = drops_dict[dk]
+                    canvas.paste(d_img, (drop_x, drop_y), d_img)
 
-        # 4. 在可见平台上放置怪兽 (每张图 3 ~ 6 只，两类怪均包含，全动作帧轮转)
-        num_mobs = random.randint(3, 5)
-        mobs_placed = 0
+        # 4. 先行放置玩家角色 (保证每张图 1 ~ 3 个玩家形态，涵盖挥刀、警戒、跑动及实机虎头帽装扮)
+        num_players = random.choice([1, 2, 2, 3])
+        players_placed = 0
 
-        for _ in range(num_mobs):
-            # 随机挑选怪兽种类
-            mob_cls = random.choice(['skeleton_soldier', 'officer_skeleton'])
-            sprite_fname, mob_img = random.choice(mobs_dict[mob_cls])
-            m_img = mob_img.copy()
+        for _ in range(num_players):
+            p_cls = random.choice(['player_left', 'player_right'])
+            p_fname, p_img_orig = random.choice(player_dict[p_cls])
+            p_img = p_img_orig.copy()
 
-            # 随机朝向
-            flip = random.choice([True, False])
-            if flip:
-                m_img = m_img.transpose(Image.FLIP_LEFT_RIGHT)
-
-            # 随机挑选一个可见平台
             tier_info, s_floor = random.choice(visible_tiers)
             side = random.choice(['left', 'right'])
             min_x, max_x = tier_info[side]
 
-            top_y = s_floor - m_img.height + 6  # 贴合地面
+            p_top_y = s_floor - p_img.height + 6
+            pbx1, pby1, pbx2, pby2 = get_tight_bbox(p_img)
+
+            for attempt in range(40):
+                pos_x = map_x + random.randint(min_x, max_x - p_img.width)
+                cand_box = (pos_x + pbx1, p_top_y + pby1, pos_x + pbx2, p_top_y + pby2)
+
+                if not any(check_overlap(cand_box, pb, margin=14) for pb in placed_boxes):
+                    canvas.paste(p_img, (pos_x, p_top_y), p_img)
+                    placed_boxes.append(cand_box)
+                    players_placed += 1
+
+                    abs_x1, abs_y1, abs_x2, abs_y2 = cand_box
+                    cx = ((abs_x1 + abs_x2) / 2.0) / cw
+                    cy = ((abs_y1 + abs_y2) / 2.0) / ch
+                    nw = (abs_x2 - abs_x1) / cw
+                    nh = (abs_y2 - abs_y1) / ch
+                    labels.append((CLASS_TO_ID[p_cls], cx, cy, nw, nh))
+
+                    lbl_cn = "我左" if p_cls == "player_left" else "我右"
+                    poly_pts = extract_polygon_contour(p_img, offset_x=pos_x, offset_y=p_top_y)
+                    json_shapes.append({
+                        "label": lbl_cn,
+                        "points": poly_pts,
+                        "group_id": None,
+                        "description": "",
+                        "shape_type": "polygon",
+                        "flags": {}
+                    })
+                    break
+
+        # 5. 高密度放置怪物 (每张图 6 ~ 9 只，围绕玩家与各层断桥平台充分分布)
+        num_mobs = random.randint(6, 9)
+        mobs_placed = 0
+
+        for _ in range(num_mobs):
+            mob_cls = random.choice(['skeleton_soldier', 'officer_skeleton'])
+            sprite_fname, mob_img = random.choice(mobs_dict[mob_cls])
+            m_img = mob_img.copy()
+
+            flip = random.choice([True, False])
+            if flip:
+                m_img = m_img.transpose(Image.FLIP_LEFT_RIGHT)
+
+            tier_info, s_floor = random.choice(visible_tiers)
+            side = random.choice(['left', 'right'])
+            min_x, max_x = tier_info[side]
+
+            top_y = s_floor - m_img.height + 6
             bx1, by1, bx2, by2 = get_tight_bbox(m_img)
 
-            for attempt in range(25):
+            for attempt in range(40):
                 pos_x = map_x + random.randint(min_x, max_x - m_img.width)
                 cand_box = (pos_x + bx1, top_y + by1, pos_x + bx2, top_y + by2)
 
-                if not any(check_overlap(cand_box, pb, margin=18) for pb in placed_boxes):
+                if not any(check_overlap(cand_box, pb, margin=10) for pb in placed_boxes):
                     canvas.paste(m_img, (pos_x, top_y), m_img)
                     placed_boxes.append(cand_box)
                     mobs_placed += 1
@@ -246,47 +290,6 @@ def generate_batch(num_images=20):
 
                     lbl_cn = "骷髅士兵" if mob_cls == "skeleton_soldier" else "骷髅士官"
                     poly_pts = extract_polygon_contour(m_img, offset_x=pos_x, offset_y=top_y)
-                    json_shapes.append({
-                        "label": lbl_cn,
-                        "points": poly_pts,
-                        "group_id": None,
-                        "description": "",
-                        "shape_type": "polygon",
-                        "flags": {}
-                    })
-                    break
-
-        # 5. 放置玩家角色 (支持 1~2 个玩家形态: 站立、移动、挥刀攻击、警戒)
-        num_players = 1 if random.random() < 0.8 else 2
-        for _ in range(num_players):
-            p_cls = random.choice(['player_left', 'player_right'])
-            p_fname, p_img_orig = random.choice(player_dict[p_cls])
-            p_img = p_img_orig.copy()
-
-            tier_info, s_floor = random.choice(visible_tiers)
-            side = random.choice(['left', 'right'])
-            min_x, max_x = tier_info[side]
-
-            p_top_y = s_floor - p_img.height + 6
-            pbx1, pby1, pbx2, pby2 = get_tight_bbox(p_img)
-
-            for attempt in range(25):
-                pos_x = map_x + random.randint(min_x, max_x - p_img.width)
-                cand_box = (pos_x + pbx1, p_top_y + pby1, pos_x + pbx2, p_top_y + pby2)
-
-                if not any(check_overlap(cand_box, pb, margin=20) for pb in placed_boxes):
-                    canvas.paste(p_img, (pos_x, p_top_y), p_img)
-                    placed_boxes.append(cand_box)
-
-                    abs_x1, abs_y1, abs_x2, abs_y2 = cand_box
-                    cx = ((abs_x1 + abs_x2) / 2.0) / cw
-                    cy = ((abs_y1 + abs_y2) / 2.0) / ch
-                    nw = (abs_x2 - abs_x1) / cw
-                    nh = (abs_y2 - abs_y1) / ch
-                    labels.append((CLASS_TO_ID[p_cls], cx, cy, nw, nh))
-
-                    lbl_cn = "我左" if p_cls == "player_left" else "我右"
-                    poly_pts = extract_polygon_contour(p_img, offset_x=pos_x, offset_y=p_top_y)
                     json_shapes.append({
                         "label": lbl_cn,
                         "points": poly_pts,
@@ -340,10 +343,10 @@ def generate_batch(num_images=20):
         dbg_path = os.path.join(DEBUG_OUTPUT_DIR, f"debug_{base_name}.jpg")
         cv2.imwrite(dbg_path, dbg_cv)
 
-        print(f"  [{img_id:02d}/{num_images}] 已生成 {base_name}.jpg (视口Y: {cam_y:4d}px, {len(labels)} 个标注目标)")
-        generated_records.append((base_name, len(labels)))
+        print(f"  [{img_id:02d}/{num_images}] 已生成 {base_name}.jpg (视口Y: {cam_y:4d}px, {mobs_placed}只怪 + {players_placed}个玩家, 共 {len(labels)} 个目标)")
+        generated_records.append((base_name, mobs_placed, players_placed, len(labels)))
 
-    print("\n✨ 全部 20 张第三军营图像与标注生成完毕！")
+    print("\n✨ 全部 20 张高密度大容量第三军营图像与标注生成完毕！")
     return generated_records
 
 
