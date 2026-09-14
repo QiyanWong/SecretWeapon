@@ -382,10 +382,11 @@ class MinimapTracker:
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 0), 1)
 
                 # 🌟 平台打怪模式：高亮安全区 (亮青/黄) 与两端危险区 (亮红粗线)
-                d_margin = getattr(decision_engine, "current_danger_margin", 150) if decision_engine else 150
+                d_margin_l = getattr(decision_engine, "current_danger_margin_left", getattr(decision_engine, "current_danger_margin", 150)) if decision_engine else 150
+                d_margin_r = getattr(decision_engine, "current_danger_margin_right", getattr(decision_engine, "current_danger_margin", 150)) if decision_engine else 150
                 p_bounds = getattr(decision_engine, "current_platform_bounds", None)
                 if not p_bounds and decision_engine and hasattr(decision_engine, "get_platform_info"):
-                    p_bounds = decision_engine.get_platform_info(px_w, py_w, danger_margin=d_margin)
+                    p_bounds = decision_engine.get_platform_info(px_w, py_w, danger_margin_left=d_margin_l, danger_margin_right=d_margin_r)
 
                 if p_bounds:
                     pf_fh, x_min, x_max, safe_left, safe_right, x_mid = p_bounds
@@ -418,12 +419,14 @@ class MinimapTracker:
                     sr_m, sry_m = mp.world_to_minimap(safe_right, y_sright, crop_w=cw, crop_h=ch)
                     
                     # 绘制左侧危险区 (亮红 4px)
-                    cv2.line(canvas, (dl1_m, dly1_m), (dl2_m, dly2_m), (0, 0, 255), 4, cv2.LINE_AA)
-                    cv2.line(canvas, (dl1_m, dly1_m - 4), (dl1_m, dly1_m + 4), (0, 0, 255), 2)
+                    if safe_left > x_min:
+                        cv2.line(canvas, (dl1_m, dly1_m), (dl2_m, dly2_m), (0, 0, 255), 4, cv2.LINE_AA)
+                        cv2.line(canvas, (dl1_m, dly1_m - 4), (dl1_m, dly1_m + 4), (0, 0, 255), 2)
                     
                     # 绘制右侧危险区 (亮红 4px)
-                    cv2.line(canvas, (dr1_m, dry1_m), (dr2_m, dry2_m), (0, 0, 255), 4, cv2.LINE_AA)
-                    cv2.line(canvas, (dr2_m, dry2_m - 4), (dr2_m, dry2_m + 4), (0, 0, 255), 2)
+                    if x_max > safe_right:
+                        cv2.line(canvas, (dr1_m, dry1_m), (dr2_m, dry2_m), (0, 0, 255), 4, cv2.LINE_AA)
+                        cv2.line(canvas, (dr2_m, dry2_m - 4), (dr2_m, dry2_m + 4), (0, 0, 255), 2)
                     
                     # 绘制中间安全巡逻区 (亮青 4px)
                     cv2.line(canvas, (sl_m, sly_m), (sr_m, sry_m), (255, 255, 0), 4, cv2.LINE_AA)
@@ -432,7 +435,10 @@ class MinimapTracker:
                     
                     # 绘制文字指示
                     cv2.putText(canvas, "SAFE", (sl_m + 2, max(12, sly_m - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
-                    cv2.putText(canvas, f"DANGER({d_margin})", (dl1_m, max(12, dly1_m - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.32, (0, 0, 255), 1)
+                    if d_margin_l > 0:
+                        cv2.putText(canvas, f"L:{d_margin_l}", (dl1_m, max(12, dly1_m - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.32, (0, 0, 255), 1)
+                    if d_margin_r > 0:
+                        cv2.putText(canvas, f"R:{d_margin_r}", (max(0, dr2_m - 35), max(12, dry2_m - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.32, (0, 0, 255), 1)
                     
                     if getattr(decision_engine, "is_escaping_platform_danger", False):
                         cv2.putText(canvas, "⚠️ ESCAPING DANGER ZONE", (10, max(15, ch - 8)),

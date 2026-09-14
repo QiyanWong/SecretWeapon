@@ -67,7 +67,9 @@ class DecisionEngine:
         self.last_log_time = 0           # 限流日志打印时间
         
         # 平台打怪与危险区防掉落避险系统
-        self.current_danger_margin = 150   # 平台左右危险区避险边距 (px)
+        self.current_danger_margin_left = 150   # 平台左侧危险区避险边距 (px)
+        self.current_danger_margin_right = 150  # 平台右侧危险区避险边距 (px)
+        self.current_danger_margin = 150        # 兼容旧代码的平台危险区边距 (px)
         self.platform_patrol_dir = "RIGHT" # 平台来回巡逻方向 ("RIGHT" / "LEFT")
         self.is_escaping_platform_danger = False # 危险区紧急回撤标志
         self.last_platform_danger_log_time = 0.0 # 危险区日志限流
@@ -203,9 +205,10 @@ class DecisionEngine:
             self.pathfinder = None
             return False
 
-    def get_platform_info(self, x_world, y_world, danger_margin=150):
+    def get_platform_info(self, x_world, y_world, danger_margin=150, danger_margin_left=None, danger_margin_right=None):
         """
-        根据当前世界坐标定位玩家脚下所在的连续完整平台，并计算左右 150px 危险区边界
+        根据当前世界坐标定位玩家脚下所在的连续完整平台，并计算左右危险区边界与安全打怪区间
+        支持左右分开设置边距 (danger_margin_left, danger_margin_right)
         返回: (curr_fh, x_min, x_max, safe_left, safe_right, x_mid) 或 None
         """
         if not self.map_parser:
@@ -236,14 +239,58 @@ class DecisionEngine:
         x_max = max(max(f.x1, f.x2) for f in connected)
         total_w = x_max - x_min
         
-        # 针对极窄平台做动态收缩保护 (避免窄平台上安全区消失)
-        actual_margin = danger_margin
-        if total_w < (danger_margin * 2 + 40):
-            actual_margin = max(20, int(total_w * 0.25))
+        # 解析左右边距参数 (支持单独传参、tuple或单一通用值兼容)
+        if danger_margin_left is None:
+            if isinstance(danger_margin, (list, tuple)) and len(danger_margin) >= 2:
+                dml = danger_margin[0]
+            else:
+                dml = danger_margin
+        else:
+            dml = danger_margin_left
+
+        if danger_margin_right is None:
+            if isinstance(danger_margin, (list, tuple)) and len(danger_margin) >= 2:
+                dmr = danger_margin[1]
+            else:
+                dmr = danger_margin
+        else:
+            dmr = danger_margin_right
+
+        try:
+            dml = max(0, int(dml))
+            dmr = max(0, int(dmr))
+        except (ValueError, TypeError):
+            dml = 150
+            dmr = 150
+
+        # 针对极窄平台做动态自适应收缩保护 (按左右边距比例缩放，避免安全区消失或倒挂)
+        actual_ml = dml
+        actual_mr = dmr
+        req_w = dml + dmr + 40
+        if total_w < req_w:
+            if dml + dmr > 0:
+                scale = max(0.0, (total_w - 40) / float(dml + dmr))
+                actual_ml = max(0, int(dml * scale))
+                actual_mr = max(0, int(dmr * scale))
+            else:
+                actual_ml = 0
+                actual_mr = 0
             
-        safe_left = x_min + actual_margin
-        safe_right = x_max - actual_margin
-        x_mid = (x_min + x_max) / 2.0
+            # 若缩放后仍重叠或余量不足，保底两侧各占 25% 平台宽
+            if (actual_ml + actual_mr) >= (total_w - 10):
+                actual_ml = max(5, int(total_w * 0.25))
+                actual_mr = max(5, int(total_w * 0.25))
+
+        safe_left = x_min + actual_ml
+        safe_right = x_max - actual_mr
+        if safe_left >= safe_right:
+            # 极小平台强制以几何中心为基准留出 20px 安全巡逻微区间
+            c = (x_min + x_max) / 2.0
+            safe_left = c - 10
+            safe_right = c + 10
+
+        # 安全回退中点：精准定位在安全区间的正中心，确保非对称避险时回退至最安全位置
+        x_mid = (safe_left + safe_right) / 2.0
         
         return curr_fh, x_min, x_max, safe_left, safe_right, x_mid
 
@@ -277,13 +324,18 @@ class DecisionEngine:
         self.enable_platform_patrol = enable_platform_patrol
         crop_w = config.get("crop_w", None)
         crop_h = config.get("crop_h", None)
-        danger_margin = config.get("danger_margin", 150)
-        self.current_danger_margin = danger_margin
+        danger_margin_left = config.get("danger_margin_left", config.get("danger_margin", 150))
+        danger_margin_right = config.get("danger_margin_right", config.get("danger_margin", 150))
+        self.current_danger_margin_left = danger_margin_left
+        self.current_danger_margin_right = danger_margin_right
+        self.current_danger_margin = max(danger_margin_left, danger_margin_right)
         
         if enable_platform_patrol and self.map_parser:
             mx, my = minimap_player_pos
             curr_xw, curr_yw = self.map_parser.minimap_to_world(mx, my, crop_w=crop_w, crop_h=crop_h)
-            p_info = self.get_platform_info(curr_xw, curr_yw, danger_margin=danger_margin)
+            p_info = self.get_platform_info(curr_xw, curr_yw, 
+                                            danger_margin_left=danger_margin_left, 
+                                            danger_margin_right=danger_margin_right)
             if p_info:
                 curr_fh, x_min, x_max, safe_left, safe_right, x_mid = p_info
                 self.current_platform_bounds = p_info
@@ -305,7 +357,7 @@ class DecisionEngine:
                         
                     if now - self.last_platform_danger_log_time >= 1.2:
                         self.last_platform_danger_log_time = now
-                        print(f"🚨 [平台避险] 玩家落入左侧 {danger_margin}px 危险区 (X={curr_xw:.0f} < 安全界限 {safe_left:.0f})！强制退出战斗，往平台中点 ({x_mid:.0f}) 紧急回退！")
+                        print(f"🚨 [平台避险] 玩家落入左侧 {danger_margin_left}px 危险区 (X={curr_xw:.0f} < 安全界限 {safe_left:.0f})！强制退出战斗，往平台安全中点 ({x_mid:.0f}) 紧急回退！")
                     return
                     
                 # (2) 落入右侧危险区 (X > safe_right): 强制向左回撤中点，并同步巡逻方向为向左
@@ -324,7 +376,7 @@ class DecisionEngine:
                         
                     if now - self.last_platform_danger_log_time >= 1.2:
                         self.last_platform_danger_log_time = now
-                        print(f"🚨 [平台避险] 玩家落入右侧 {danger_margin}px 危险区 (X={curr_xw:.0f} > 安全界限 {safe_right:.0f})！强制退出战斗，往平台中点 ({x_mid:.0f}) 紧急回退！")
+                        print(f"🚨 [平台避险] 玩家落入右侧 {danger_margin_right}px 危险区 (X={curr_xw:.0f} > 安全界限 {safe_right:.0f})！强制退出战斗，往平台安全中点 ({x_mid:.0f}) 紧急回退！")
                     return
                 else:
                     self.is_escaping_platform_danger = False
@@ -677,10 +729,13 @@ class DecisionEngine:
         mx, my = m_pos
         crop_w = config.get("crop_w", None)
         crop_h = config.get("crop_h", None)
-        danger_margin = config.get("danger_margin", 150)
+        danger_margin_left = config.get("danger_margin_left", config.get("danger_margin", 150))
+        danger_margin_right = config.get("danger_margin_right", config.get("danger_margin", 150))
         curr_xw, curr_yw = self.map_parser.minimap_to_world(mx, my, crop_w=crop_w, crop_h=crop_h)
         
-        p_info = self.get_platform_info(curr_xw, curr_yw, danger_margin=danger_margin)
+        p_info = self.get_platform_info(curr_xw, curr_yw, 
+                                        danger_margin_left=danger_margin_left, 
+                                        danger_margin_right=danger_margin_right)
         if not p_info:
             p_info = self.current_platform_bounds
         if not p_info:

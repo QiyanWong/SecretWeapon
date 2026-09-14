@@ -13,6 +13,7 @@ dataset/raw_images/
 dataset/routes/
 dataset/debug_snapshots/
 dataset/synthetic_debug/
+dataset/frame_*.jpg
 dataset/raw_images_backup/
 scratch/
 .system_generated/

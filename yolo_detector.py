@@ -569,18 +569,32 @@ class DetectorApp(QMainWindow):
         h_platform = QHBoxLayout()
         self.chk_platform_patrol = QCheckBox("🛡️ 平台打怪 (锁定当前平台与避险)")
         self.chk_platform_patrol.setStyleSheet("color: #a6e3a1; font-weight: bold;")
-        self.chk_platform_patrol.setToolTip("根据导入的地图 XML 自动判定玩家所在的单一平台，无视一切寻路节点；左右边缘设立危险区，落入危险区立刻退出战斗并往中点回撤，在安全区两端来回巡逻。")
+        self.chk_platform_patrol.setToolTip("根据导入的地图 XML 自动判定玩家所在的单一平台，无视一切寻路节点；左右边缘分别设立危险区，落入危险区立刻退出战斗并往安全中点回撤，在安全打怪区间内巡逻。")
         self.chk_platform_patrol.toggled.connect(self.on_platform_mode_toggled)
         h_platform.addWidget(self.chk_platform_patrol)
 
-        h_platform.addWidget(QLabel("安全边界/避险边距:"))
-        self.sp_danger_margin = QSpinBox()
-        self.sp_danger_margin.setRange(20, 600)
-        self.sp_danger_margin.setValue(150)
-        self.sp_danger_margin.setSuffix(" px")
-        self.sp_danger_margin.setFixedWidth(75)
-        self.sp_danger_margin.setToolTip("平台左右两侧设立的危险区避险距离(px)。默认 150px，若平台较小或需要更大活动范围可调小。")
-        h_platform.addWidget(self.sp_danger_margin)
+        h_platform.addWidget(QLabel("左边距:"))
+        self.sp_danger_margin_left = QSpinBox()
+        self.sp_danger_margin_left.setRange(0, 1000)
+        self.sp_danger_margin_left.setValue(150)
+        self.sp_danger_margin_left.setSuffix(" px")
+        self.sp_danger_margin_left.setFixedWidth(70)
+        self.sp_danger_margin_left.setToolTip("平台左侧设立的危险区避险距离(px)。默认 150px。贴墙可设为 0px，悬崖侧可调大以防跌落。")
+        self.sp_danger_margin_left.valueChanged.connect(self.on_platform_margin_changed)
+        h_platform.addWidget(self.sp_danger_margin_left)
+
+        h_platform.addWidget(QLabel("右边距:"))
+        self.sp_danger_margin_right = QSpinBox()
+        self.sp_danger_margin_right.setRange(0, 1000)
+        self.sp_danger_margin_right.setValue(150)
+        self.sp_danger_margin_right.setSuffix(" px")
+        self.sp_danger_margin_right.setFixedWidth(70)
+        self.sp_danger_margin_right.setToolTip("平台右侧设立的危险区避险距离(px)。默认 150px。贴墙可设为 0px，悬崖侧可调大以防跌落。")
+        self.sp_danger_margin_right.valueChanged.connect(self.on_platform_margin_changed)
+        h_platform.addWidget(self.sp_danger_margin_right)
+
+        # 保持旧属性兼容
+        self.sp_danger_margin = self.sp_danger_margin_left
         map_nav_layout.addLayout(h_platform)
 
         h_map_select = QHBoxLayout()
@@ -1481,6 +1495,24 @@ class DetectorApp(QMainWindow):
                 self.btn_refresh_maps.setEnabled(False)
             self.log("🛡️ 【模式切换】已退出 平台打怪 模式")
 
+    def on_platform_margin_changed(self):
+        """当用户微调平台左右避险边距时，实时同步决策引擎并刷新平台安全区"""
+        ml = self.sp_danger_margin_left.value()
+        mr = self.sp_danger_margin_right.value()
+        self.decision_engine.current_danger_margin_left = ml
+        self.decision_engine.current_danger_margin_right = mr
+        self.decision_engine.current_danger_margin = max(ml, mr)
+        
+        # 若当前小地图与地图解析器已就绪，立即重新计算平台区间，使 Overlay HUD 即时呈现调整效果
+        if self.decision_engine.map_parser and self.player_map_pos:
+            px, py = self.player_map_pos
+            xw, yw = self.decision_engine.map_parser.minimap_to_world(
+                px, py, crop_w=self.sp_crop_w.value(), crop_h=self.sp_crop_h.value()
+            )
+            pb = self.decision_engine.get_platform_info(xw, yw, danger_margin_left=ml, danger_margin_right=mr)
+            if pb:
+                self.decision_engine.current_platform_bounds = pb
+
     def on_nav_mode_toggled(self, checked):
         """高级地图 XML 寻路与传统路线录制模式自由切换"""
         if checked:
@@ -1645,7 +1677,9 @@ class DetectorApp(QMainWindow):
                 "aoe_dir_mode": self.cb_aoe_dir_mode.currentText(),
                 "monster_agro_dist": self.sp_agro_dist.value(),
                 "jump_key": self.cb_key_jump.currentText(),
-                "danger_margin": self.sp_danger_margin.value(),
+                "danger_margin_left": self.sp_danger_margin_left.value(),
+                "danger_margin_right": self.sp_danger_margin_right.value(),
+                "danger_margin": self.sp_danger_margin_left.value(),
                 "captcha_alert": self.chk_captcha_alert.isChecked(),
                 "captcha_volume_boost": self.chk_captcha_volume.isChecked(),
                 "disconnect_alert": self.chk_disconnect_alert.isChecked(),
@@ -1730,8 +1764,15 @@ class DetectorApp(QMainWindow):
                 idx = self.cb_key_jump.findText(cfg["jump_key"])
                 if idx >= 0:
                     self.cb_key_jump.setCurrentIndex(idx)
-            if "danger_margin" in cfg:
-                self.sp_danger_margin.setValue(int(cfg["danger_margin"]))
+            if "danger_margin_left" in cfg:
+                self.sp_danger_margin_left.setValue(int(cfg["danger_margin_left"]))
+            elif "danger_margin" in cfg:
+                self.sp_danger_margin_left.setValue(int(cfg["danger_margin"]))
+
+            if "danger_margin_right" in cfg:
+                self.sp_danger_margin_right.setValue(int(cfg["danger_margin_right"]))
+            elif "danger_margin" in cfg:
+                self.sp_danger_margin_right.setValue(int(cfg["danger_margin"]))
             if "captcha_alert" in cfg:
                 self.chk_captcha_alert.setChecked(bool(cfg["captcha_alert"]))
             if "captcha_volume_boost" in cfg:
@@ -2053,12 +2094,15 @@ class DetectorApp(QMainWindow):
                         
                         if self.chk_platform_patrol.isChecked():
                             pb = getattr(self.decision_engine, "current_platform_bounds", None)
+                            ml = self.sp_danger_margin_left.value()
+                            mr = self.sp_danger_margin_right.value()
                             if not pb and cur_fh:
-                                pb = self.decision_engine.get_platform_info(xw, yw, danger_margin=self.sp_danger_margin.value())
+                                pb = self.decision_engine.get_platform_info(xw, yw, danger_margin_left=ml, danger_margin_right=mr)
                             if pb:
                                 _, x_min, x_max, s_left, s_right, x_mid = pb
                                 esc_str = " | ⚠️ 正在避险回退中点" if getattr(self.decision_engine, "is_escaping_platform_danger", False) else ""
-                                self.log(f"【🛡️ 平台打怪监控】世界坐标: ({xw}, {yw}) | {fh_str} | 安全区: [{s_left:.0f} ~ {s_right:.0f}] (边距: {self.sp_danger_margin.value()}px){esc_str}")
+                                margin_desc = f"左边距: {ml}px, 右边距: {mr}px" if ml != mr else f"边距: {ml}px"
+                                self.log(f"【🛡️ 平台打怪监控】世界坐标: ({xw}, {yw}) | {fh_str} | 安全区: [{s_left:.0f} ~ {s_right:.0f}] ({margin_desc}){esc_str}")
                             else:
                                 self.log(f"【🛡️ 平台打怪监控】世界坐标: ({xw}, {yw}) | {fh_str} | 等待吸附有效平台")
                         else:
@@ -2312,7 +2356,9 @@ class DetectorApp(QMainWindow):
                 "jump_key": self.cb_key_jump.currentText(),
                 "enable_advanced_nav": self.chk_advanced_nav.isChecked(),
                 "enable_platform_patrol": self.chk_platform_patrol.isChecked(),
-                "danger_margin": self.sp_danger_margin.value(),
+                "danger_margin_left": self.sp_danger_margin_left.value(),
+                "danger_margin_right": self.sp_danger_margin_right.value(),
+                "danger_margin": self.sp_danger_margin_left.value(),
                 "crop_w": self.sp_crop_w.value(),
                 "crop_h": self.sp_crop_h.value()
             }
