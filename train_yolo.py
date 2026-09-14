@@ -122,7 +122,7 @@ def create_data_yaml(classes=CLASS_NAMES):
     print(f"类别定义: {data_config['names']}")
 
 
-def run_training(epochs=50, imgsz=800, batch=16):
+def run_training(epochs=60, imgsz=800, batch=8):
     """使用 Ultralytics YOLOv8 开始训练"""
     print("=" * 60)
     print("开始初始化 YOLOv8 Nano 模型训练...")
@@ -130,7 +130,10 @@ def run_training(epochs=50, imgsz=800, batch=16):
     # 加载预训练模型 weights (首次运行会自动从 GitHub 下载 yolov8n.pt)
     model = YOLO('yolov8n.pt')
 
-    # 开始训练 (为 2D 横版游戏禁用旋转 degrees=0.0，增强小目标与扁平怪物特征)
+    # 开始训练:
+    # 1. 禁用旋转 degrees=0.0 (2D 横版)
+    # 2. 严禁水平翻转 fliplr=0.0 (因为类别区分了 player_left 与 player_right，开启翻转会导致左右朝向标签完全颠倒互斥而无法收敛！)
+    # 3. 适度降低马赛克增强 mosaic=0.5，保护角色外观完整性
     results = model.train(
         data=YAML_PATH,
         epochs=epochs,
@@ -138,6 +141,8 @@ def run_training(epochs=50, imgsz=800, batch=16):
         batch=batch,
         workers=2,
         degrees=0.0,
+        fliplr=0.0,
+        mosaic=0.5,
         name='maple_yolo_run',
         project=os.path.join(BASE_DIR, 'runs', 'detect')
     )
@@ -161,8 +166,8 @@ def run_training(epochs=50, imgsz=800, batch=16):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="冒险岛 YOLOv8 训练脚本")
-    parser.add_argument("--epochs", type=int, default=50, help="训练轮数 (默认 50)")
-    parser.add_argument("--batch", type=int, default=16, help="Batch 大小 (默认 16)")
+    parser.add_argument("--epochs", type=int, default=60, help="训练轮数 (默认 60)")
+    parser.add_argument("--batch", type=int, default=8, help="Batch 大小 (默认 8)")
     args = parser.parse_args()
 
     # 1. 准备数据集结构
