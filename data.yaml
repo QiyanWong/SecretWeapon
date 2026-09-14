@@ -27,6 +27,8 @@ names:
   25: zombie_lupin
   26: wraith
   27: jr_boogie
+  28: skeleton_soldier
+  29: officer_skeleton
 path: ./dataset
 train: images/train
 val: images/val

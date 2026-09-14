@@ -39,3 +39,7 @@ zombie_lupin = 1.0
 wraith = 1.0
 jr_boogie = 3.0
 幼魔精灵 = 3.0
+skeleton_soldier = 1.0
+骷髅士兵 = 1.0
+officer_skeleton = 1.0
+骷髅士官 = 1.0

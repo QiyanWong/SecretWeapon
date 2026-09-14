@@ -39,7 +39,9 @@ MOB_MAPPING = {
     'tauromacis':      {'id': 5130100, 'cn': '月牙牛魔王', 'en': 'Tauromacis'},
     'zombie_lupin':    {'id': 4230101, 'cn': '僵尸猴/僵尸鲁胖', 'en': 'Zombie Lupin'},
     'wraith':          {'id': 4230102, 'cn': '大幽灵', 'en': 'Wraith'},
-    'jr_boogie':       {'id': 3230300, 'cn': '幼魔精灵', 'en': 'Jr. Boogie'}
+    'jr_boogie':       {'id': 3230300, 'cn': '幼魔精灵', 'en': 'Jr. Boogie'},
+    'skeleton_soldier': {'id': 5150001, 'cn': '骷髅士兵', 'en': 'Skeleton Soldier'},
+    'officer_skeleton': {'id': 6230602, 'cn': '骷髅士官', 'en': 'Officer Skeleton'}
 }
 
 # 仅下载存活及战斗相关的动态帧 (排除死亡消散 die 动作，防止模型误将尸体当做存活目标)

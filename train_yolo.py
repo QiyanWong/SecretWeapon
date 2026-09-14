@@ -45,7 +45,9 @@ CLASS_NAMES = [
     'dark_stone_golem',
     'zombie_lupin',
     'wraith',
-    'jr_boogie'
+    'jr_boogie',
+    'skeleton_soldier',
+    'officer_skeleton'
 ]
 
 
