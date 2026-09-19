@@ -1870,5 +1870,10 @@
     "start_time": "2026-09-19 14:56:03",
     "captcha_triggers": [],
     "end_time": "2026-09-19 14:59:38"
+  },
+  {
+    "start_time": "2026-09-19 15:05:51",
+    "captcha_triggers": [],
+    "end_time": null
   }
 ]
