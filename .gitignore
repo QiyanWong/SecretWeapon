@@ -26,6 +26,7 @@ runtime_config.json
 *.zip
 *.exe
 WzComparerR2/
+momiji/
 
 # OS and Editor files
 .vscode/
