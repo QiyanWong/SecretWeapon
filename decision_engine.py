@@ -127,48 +127,45 @@ class DecisionEngine:
                 pass
         return self.monster_priorities.get(str(monster_name).strip().lower(), 1.0)
 
-    def calc_horizontal_edge_dist_and_dir(self, p_pos, m):
+    def calc_horizontal_dist_and_dir(self, p_pos, m):
         """
-        计算角色包围盒与怪物包围盒的真实水平边缘间距 (h_edge_dist) 以及相对方位 (rel_dir: 'LEFT' 或 'RIGHT')
-        解决包围盒中心点测距导致判定范围失真、贴脸时由于包围盒重叠导致朝向反转的问题
+        计算角色与怪物的真实水平中心间距 (dist_x)、相对方位 (rel_dir: 'LEFT' 或 'RIGHT')
+        以及包围盒边缘净间距 (h_edge_dist)
+        - dist_x: 严格基于真实屏幕水平坐标差 abs(m_cx - p_cx)，与普攻/群攻范围(X)严格对齐，
+                  杜绝因扣除包围盒边缘导致距离虚标变小、远距离空挥打不到的问题。
+        - rel_dir: 严格基于怪物与角色的水平方位 (m_cx > p_cx 为 RIGHT, m_cx < p_cx 为 LEFT)。
+        - h_edge_dist: 包围盒边缘净距离 (发生包围盒重叠时为 0)，用于贴脸危险碰撞检测。
         """
         p_cx = p_pos[0]
+        m_cx = m[0]
+        dist_x = abs(m_cx - p_cx)
+
+        if m_cx > p_cx:
+            rel_dir = "RIGHT"
+        elif m_cx < p_cx:
+            rel_dir = "LEFT"
+        else:
+            rel_dir = getattr(self, "last_attack_dir", "RIGHT")
+
         p_x1 = p_pos[2] if len(p_pos) >= 6 else (p_cx - 25)
         p_x2 = p_pos[4] if len(p_pos) >= 6 else (p_cx + 25)
-
-        m_cx = m[0]
         m_x1 = m[2] if len(m) >= 6 else (m_cx - 30)
         m_x2 = m[4] if len(m) >= 6 else (m_cx + 30)
 
-        # 情况 1: 怪物完全在玩家左侧 (怪物右边界 < 玩家左边界)
         if m_x2 < p_x1:
             h_edge_dist = p_x1 - m_x2
-            rel_dir = "LEFT"
-        # 情况 2: 怪物完全在玩家右侧 (怪物左边界 > 玩家右边界)
         elif m_x1 > p_x2:
             h_edge_dist = m_x1 - p_x2
-            rel_dir = "RIGHT"
-        # 情况 3: 两者包围盒发生水平重叠碰撞 (贴身/冲撞)
         else:
             h_edge_dist = 0
-            # 判定怪物主体绝大部分在哪一侧 (左侧凸出量 vs 右侧凸出量)
-            left_overhang = p_x1 - m_x1
-            right_overhang = m_x2 - p_x2
-            if left_overhang > right_overhang + 4:
-                rel_dir = "LEFT"
-            elif right_overhang > left_overhang + 4:
-                rel_dir = "RIGHT"
-            else:
-                # 重叠非常对称或中心相近，退化到中心点微小偏移判定
-                if m_cx < p_cx - 2:
-                    rel_dir = "LEFT"
-                elif m_cx > p_cx + 2:
-                    rel_dir = "RIGHT"
-                else:
-                    # 几乎完全重合时，维持最近一次攻击朝向，避免方向高频震荡反转
-                    rel_dir = getattr(self, "last_attack_dir", "RIGHT")
 
-        return h_edge_dist, rel_dir
+        return dist_x, rel_dir, h_edge_dist
+
+    def calc_horizontal_edge_dist_and_dir(self, p_pos, m):
+        """向后兼容别名 (返回 dist_x 与 rel_dir)"""
+        dist_x, rel_dir, _ = self.calc_horizontal_dist_and_dir(p_pos, m)
+        return dist_x, rel_dir
+
 
     def load_map_xml(self, xml_path):
         """加载解包地图 XML 并初始化 A* 拓扑寻路器"""
@@ -425,10 +422,10 @@ class DecisionEngine:
 
                 # 筛选同平台/同高度差在 attack_range_y 像素内的有效怪物
                 if effective_y_diff <= self.ATTACK_RANGE_Y:
-                    h_edge_dist, rel_dir = self.calc_horizontal_edge_dist_and_dir(game_screen_player_pos, m)
+                    dist_x, rel_dir, h_edge_dist = self.calc_horizontal_dist_and_dir(game_screen_player_pos, m)
                     weight = self.get_monster_weight(m_name)
-                    # 综合有效距离：水平边缘距离 + 垂直落差惩罚 (优先打击同平台直线上最近敌人)
-                    effective_dist = h_edge_dist + effective_y_diff * 1.5
+                    # 综合有效距离：真实水平中心间距 + 垂直落差惩罚 (优先打击同平台直线上真正最近敌人)
+                    effective_dist = dist_x + effective_y_diff * 1.5
 
                     m_item = {
                         'raw': m,
@@ -436,6 +433,7 @@ class DecisionEngine:
                         'cy': my,
                         'name': m_name,
                         'weight': weight,
+                        'dist_x': dist_x,
                         'h_edge_dist': h_edge_dist,
                         'effective_y_diff': effective_y_diff,
                         'effective_dist': effective_dist,
@@ -443,19 +441,19 @@ class DecisionEngine:
                     }
                     same_level_monsters.append(m_item)
 
-        # 核心排序准则 (问题 3 & 4 核心解法):
+        # 核心排序准则:
         # 1. 权重越高越优先 (-weight)
-        # 2. 权重相同（包括默认全为 1.0 时），有效边缘距离最近越优先 (effective_dist)
+        # 2. 权重相同（包括默认全为 1.0 时），真实水平中心距离最近越优先 (effective_dist)
         same_level_monsters.sort(key=lambda x: (-x['weight'], x['effective_dist']))
 
         # 筛选寻怪范围 (MONSTER_AGRO_DIST) 内的最佳接敌目标
         agro_candidates = [m for m in same_level_monsters if m['effective_dist'] <= self.MONSTER_AGRO_DIST]
         best_agro_monster = agro_candidates[0] if agro_candidates else None
 
-        # 统计在群攻范围与普攻范围内的怪物 (基于真实水平边缘距离 h_edge_dist，解决问题 1)
+        # 统计在群攻范围与普攻范围内的怪物 (基于真实水平中心距离 dist_x，严格对齐射程设定)
         if is_single_dir:
-            r_monsters = [m for m in same_level_monsters if m['rel_dir'] == "RIGHT" and m['h_edge_dist'] <= aoe_skill_range]
-            l_monsters = [m for m in same_level_monsters if m['rel_dir'] == "LEFT" and m['h_edge_dist'] <= aoe_skill_range]
+            r_monsters = [m for m in same_level_monsters if m['rel_dir'] == "RIGHT" and m['dist_x'] <= aoe_skill_range]
+            l_monsters = [m for m in same_level_monsters if m['rel_dir'] == "LEFT" and m['dist_x'] <= aoe_skill_range]
             if len(r_monsters) >= aoe_monster_count:
                 aoe_monsters = r_monsters
             elif len(l_monsters) >= aoe_monster_count:
@@ -463,9 +461,9 @@ class DecisionEngine:
             else:
                 aoe_monsters = []
         else:
-            aoe_monsters = [m for m in same_level_monsters if m['h_edge_dist'] <= aoe_skill_range]
+            aoe_monsters = [m for m in same_level_monsters if m['dist_x'] <= aoe_skill_range]
 
-        normal_monsters = [m for m in same_level_monsters if m['h_edge_dist'] <= normal_atk_range]
+        normal_monsters = [m for m in same_level_monsters if m['dist_x'] <= normal_atk_range]
 
         # 2. 状态跃迁逻辑 (FSM) - 单向无怪静默防抖：寻路遇怪进战斗；战斗无怪开始计时，达到设定间隔仍无怪切回寻路
         if self.state == FSMState.IDLE:
@@ -595,7 +593,7 @@ class DecisionEngine:
         if now - self.last_log_time > 1.0:
             same_cnt = len(same_level_monsters)
             tot_cnt = len(game_screen_monsters) if game_screen_monsters else 0
-            target_str = f"[{best_agro_monster['name']}](权={best_agro_monster['weight']:.1f},边缘距={best_agro_monster['h_edge_dist']}px)" if best_agro_monster else "None"
+            target_str = f"[{best_agro_monster['name']}](权={best_agro_monster['weight']:.1f},距={best_agro_monster['dist_x']}px)" if best_agro_monster else "None"
             print(f"[DECISION DEBUG] State={self.state}, Total={tot_cnt}, SameLevel={same_cnt}, Target={target_str}, AoE={len(aoe_monsters)}, Normal={len(normal_monsters)}")
             self.last_log_time = now
 
@@ -1156,17 +1154,17 @@ class DecisionEngine:
 
         # 兼顾 target_item 是 dict 还是旧坐标 tuple
         if isinstance(target_item, dict):
-            h_edge_dist = target_item['h_edge_dist']
+            dist_x = target_item.get('dist_x', abs(target_item['cx'] - p_pos[0]))
             rel_dir = target_item['rel_dir']
         else:
             px = p_pos[0]
             mx = target_item[0]
-            h_edge_dist = abs(mx - px)
+            dist_x = abs(mx - px)
             rel_dir = "RIGHT" if mx >= px else "LEFT"
 
         atk_x = getattr(self, 'ATTACK_RANGE_X', 140)
-        # 针对问题 1: 安全停步距离。在距离怪物边缘 40 ~ (atk_x - 40)px 处平稳停步出招，留出充足空间绝不撞怪
-        safe_stop_dist = max(40, atk_x - 40)
+        # 针对空挥优化：在距离目标中心 (atk_x - 30)px 处平稳停步出招，既确保处于攻击命中射程内，又留足安全身位不撞怪
+        safe_stop_dist = max(50, atk_x - 30)
 
         # 🌟 平台打怪模式：最高优先级危险区防掉落避险拦截
         # 即使追击高权重怪物，也绝对禁止跨越平台安全区边界 (满足需求 4)
@@ -1183,7 +1181,7 @@ class DecisionEngine:
                 self.gc.clear_movement()
                 return
 
-        if h_edge_dist > safe_stop_dist:
+        if dist_x > safe_stop_dist:
             if rel_dir == "RIGHT":
                 self.gc.release_key("LEFT")
                 self.gc.press_key("RIGHT")
@@ -1208,8 +1206,8 @@ class DecisionEngine:
         if not same_level_monsters:
             return
 
-        # 检查面前是否有极近距离的贴脸危险怪物 (边缘距离 <= 35px 或正在重叠)，优先保命自卫 (解决问题 3)
-        close_danger_monsters = [m for m in same_level_monsters if m['h_edge_dist'] <= 35]
+        # 检查面前是否有极近距离的贴脸危险怪物 (dist_x <= 50 或边缘重叠)，优先保命自卫
+        close_danger_monsters = [m for m in same_level_monsters if (m['dist_x'] <= 50 or m.get('h_edge_dist', 999) <= 20)]
 
         is_single_dir = ("单向" in aoe_dir_mode)
         aoe_ready = (now - self.last_aoe_attack_time >= self.target_aoe_skill_interval)
@@ -1218,8 +1216,8 @@ class DecisionEngine:
         # 1. 优先判定群攻门槛 (若有贴脸近战危险怪，且群攻朝向背对该危险怪，则抑制背身群攻，优先清除面前近怪)
         if aoe_ready:
             if is_single_dir:
-                r_monsters = [m for m in same_level_monsters if m['rel_dir'] == "RIGHT" and m['h_edge_dist'] <= aoe_skill_range]
-                l_monsters = [m for m in same_level_monsters if m['rel_dir'] == "LEFT" and m['h_edge_dist'] <= aoe_skill_range]
+                r_monsters = [m for m in same_level_monsters if m['rel_dir'] == "RIGHT" and m['dist_x'] <= aoe_skill_range]
+                l_monsters = [m for m in same_level_monsters if m['rel_dir'] == "LEFT" and m['dist_x'] <= aoe_skill_range]
                 
                 # 计算左右侧怪物群权重综合分 (支持问题 4 权重)
                 r_weight_score = sum(m['weight'] for m in r_monsters)
@@ -1241,19 +1239,19 @@ class DecisionEngine:
                         suppress_aoe = True
 
                 if target_aoe_dir and not suppress_aoe:
-                    self._trigger_attack_with_smart_turn(target_aoe_dir, aoe_skill_key, player_state)
-                    self.last_aoe_attack_time = now
                     self.last_attack_dir = target_aoe_dir
+                    self._trigger_attack_with_turn(target_aoe_dir, aoe_skill_key)
+                    self.last_aoe_attack_time = now
                     if hasattr(self.gc, 'jitter') and self.gc.jitter:
                         self.target_aoe_skill_interval = self.gc.jitter.calc_floating_interval(aoe_skill_interval, ratio=0.10)
                     else:
                         self.target_aoe_skill_interval = aoe_skill_interval
                     triggered_aoe = True
                     cnt = len(r_monsters) if target_aoe_dir == "RIGHT" else len(l_monsters)
-                    print(f"[COMBAT] 【单向群攻触发({target_aoe_dir})】怪数={cnt} >= {aoe_monster_count}，施放群攻 [{aoe_skill_key}]")
+                    print(f"[COMBAT] 【单向群攻触发({target_aoe_dir})】怪数={cnt} >= {aoe_monster_count}，朝向 [{target_aoe_dir}] 施放群攻 [{aoe_skill_key}]")
             else:
                 # 双向群攻
-                aoe_list = [m for m in same_level_monsters if m['h_edge_dist'] <= aoe_skill_range]
+                aoe_list = [m for m in same_level_monsters if m['dist_x'] <= aoe_skill_range]
                 if len(aoe_list) >= aoe_monster_count:
                     r_monsters = [m for m in aoe_list if m['rel_dir'] == "RIGHT"]
                     l_monsters = [m for m in aoe_list if m['rel_dir'] == "LEFT"]
@@ -1262,9 +1260,9 @@ class DecisionEngine:
                     target_dir = "RIGHT" if r_weight_score >= l_weight_score else "LEFT"
                     if close_danger_monsters:
                         target_dir = close_danger_monsters[0]['rel_dir']
-                    self._trigger_attack_with_smart_turn(target_dir, aoe_skill_key, player_state)
-                    self.last_aoe_attack_time = now
                     self.last_attack_dir = target_dir
+                    self._trigger_attack_with_turn(target_dir, aoe_skill_key)
+                    self.last_aoe_attack_time = now
                     if hasattr(self.gc, 'jitter') and self.gc.jitter:
                         self.target_aoe_skill_interval = self.gc.jitter.calc_floating_interval(aoe_skill_interval, ratio=0.10)
                     else:
@@ -1276,51 +1274,55 @@ class DecisionEngine:
         if not triggered_aoe:
             normal_ready = (now - self.last_normal_attack_time >= self.target_normal_atk_interval)
             if normal_ready:
-                # 筛选处于真实普攻边缘距离内的怪物 (解决问题 1)
-                normal_list = [m for m in same_level_monsters if m['h_edge_dist'] <= normal_atk_range]
+                # 筛选处于真实水平普攻距离内的怪物 (基于 dist_x，彻底解决空挥问题)
+                normal_list = [m for m in same_level_monsters if m['dist_x'] <= normal_atk_range]
                 if normal_list:
-                    # 综合优先级仲裁 (满足问题 3 & 4):
-                    # 1. 贴脸危险怪 (h_edge_dist <= 35) 最先自卫，消除面前怪碰撞
+                    # 综合优先级仲裁:
+                    # 1. 贴脸危险怪 (dist_x <= 50 或 h_edge_dist <= 20) 最先自卫，消除面前怪碰撞
                     # 2. 权重较高怪优先 (-weight)
-                    # 3. 同权重下，边缘距离最近怪绝对优先 (h_edge_dist)
-                    normal_list.sort(key=lambda m: (0 if m['h_edge_dist'] <= 35 else 1, -m['weight'], m['h_edge_dist']))
+                    # 3. 同权重下，真实中心距离最近怪绝对优先 (dist_x)
+                    normal_list.sort(key=lambda m: (0 if (m['dist_x'] <= 50 or m.get('h_edge_dist', 999) <= 20) else 1, -m['weight'], m['dist_x']))
                     target_m = normal_list[0]
                     target_dir = target_m['rel_dir']
                     self.last_attack_dir = target_dir
 
-                    # 智能出招时序解耦 (彻底解决问题 2: 消除同毫秒按键并发导致的 DirectX 反向空挥)
-                    self._trigger_attack_with_smart_turn(target_dir, normal_atk_key, player_state)
+                    # 强制点按怪物方向键转向后出招，消除任何朝向误判空挥
+                    self._trigger_attack_with_turn(target_dir, normal_atk_key)
                     self.last_normal_attack_time = now
                     if hasattr(self.gc, 'jitter') and self.gc.jitter:
                         self.target_normal_atk_interval = self.gc.jitter.calc_floating_interval(normal_atk_interval, ratio=0.10)
                     else:
                         self.target_normal_atk_interval = normal_atk_interval
-                    print(f"[COMBAT] 【普攻触发】锁定目标 [{target_m['name']}](权={target_m['weight']:.1f}, 边缘距={target_m['h_edge_dist']}px)，朝向 [{target_dir}] 施放普攻 [{normal_atk_key}]")
+                    print(f"[COMBAT] 【普攻触发】锁定目标 [{target_m['name']}](权={target_m['weight']:.1f}, 距离={target_m['dist_x']}px)，朝向 [{target_dir}] 施放普攻 [{normal_atk_key}]")
 
-    def _trigger_attack_with_smart_turn(self, target_dir, attack_key, player_state):
+    def _trigger_attack_with_turn(self, target_dir, attack_key):
         """
-        智能出招与转向解耦 (彻底解决问题 2):
-        - 若角色当前朝向与目标朝向一致：直接施放攻击键，0ms 延时，绝不按方向键（防止微位移/顿挫/撞怪）
-        - 若角色当前朝向与目标朝向相反：异步执行精准转向时序 (点按方向键35ms -> 释放 -> 缓冲15ms -> 出招)，
-          彻底根治 DirectX 底层同帧并发导致的反向空挥
+        每次攻击前，无论角色当前朝向如何，均点按朝向怪物的方向键以完成转向，确保 100% 朝向怪物出招。
+        使用独立后台线程异步执行，防止阻塞主 GUI 定时器循环。
         """
-        curr_dir = "LEFT" if player_state == "left" else ("RIGHT" if player_state == "right" else None)
-        if curr_dir is not None and curr_dir == target_dir:
-            self.gc.tap_key(attack_key)
-        else:
-            threading.Thread(
-                target=self._exec_turn_and_attack,
-                args=(target_dir, attack_key),
-                daemon=True
-            ).start()
+        if getattr(self, '_is_attack_executing', False):
+            return
+        threading.Thread(
+            target=self._exec_turn_and_attack,
+            args=(target_dir, attack_key),
+            daemon=True
+        ).start()
+
+    def _trigger_attack_with_smart_turn(self, target_dir, attack_key, player_state=None):
+        """兼容旧方法签名，统一走转向后出招"""
+        self._trigger_attack_with_turn(target_dir, attack_key)
 
     def _exec_turn_and_attack(self, target_dir, attack_key):
-        """后台执行转向与出招时序解耦"""
-        self.gc.press_key(target_dir)
-        time.sleep(0.035)
-        self.gc.release_key(target_dir)
-        time.sleep(0.015)
-        self.gc.tap_key(attack_key)
+        """后台异步执行：点按怪物方向键 (35ms) -> 释放 -> 缓冲 (15ms) -> 出招"""
+        self._is_attack_executing = True
+        try:
+            self.gc.press_key(target_dir)
+            time.sleep(0.035)
+            self.gc.release_key(target_dir)
+            time.sleep(0.015)
+            self.gc.tap_key(attack_key)
+        finally:
+            self._is_attack_executing = False
 
     def reset(self):
         self._set_state(FSMState.IDLE, force=True)
