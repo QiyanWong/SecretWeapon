@@ -2,7 +2,16 @@ import os
 import sys
 
 # 优先自动注册并加载 PyTorch DLL 目录，防止 Windows DLL 库与 OpenCV/PyQt5 冲突 (WinError 1114)
-torch_lib_dir = os.path.join(sys.prefix, "Lib", "site-packages", "torch", "lib")
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+if getattr(sys, 'frozen', False):
+    # PyInstaller 单文件/文件夹打包运行环境
+    meipass_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    torch_lib_dir = os.path.join(meipass_dir, "torch", "lib")
+else:
+    # 源码直接运行环境
+    torch_lib_dir = os.path.join(sys.prefix, "Lib", "site-packages", "torch", "lib")
+
 if os.path.exists(torch_lib_dir):
     try:
         os.add_dll_directory(torch_lib_dir)

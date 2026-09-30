@@ -14,6 +14,7 @@ echo 2. 开始打包 yolo_detector.py 为单文件 Executable...
 pyinstaller --noconfirm --onefile --windowed ^
   --name "SecretWeapon" ^
   --collect-all ultralytics ^
+  --collect-all torch ^
   --add-data "dataset;dataset" ^
   --add-data "map;map" ^
   --add-data "best.pt;." ^

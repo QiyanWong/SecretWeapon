@@ -30,6 +30,7 @@ jobs:
           pyinstaller --noconfirm --onefile --windowed `
             --name "SecretWeapon" `
             --collect-all ultralytics `
+            --collect-all torch `
             --add-data "dataset;dataset" `
             --add-data "map;map" `
             --add-data "best.pt;." `
