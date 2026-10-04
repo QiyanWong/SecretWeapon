@@ -1,13 +1,20 @@
 import os
 import sys
+import ctypes
 
 # 优先自动注册并加载 PyTorch DLL 目录，防止 Windows DLL 库与 OpenCV/PyQt5 冲突 (WinError 1114)
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["KMP_INIT_AT_FORK"] = "FALSE"
+os.environ["OMP_NUM_THREADS"] = "1"
 
 if getattr(sys, 'frozen', False):
     # PyInstaller 单文件/文件夹打包运行环境
     meipass_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
     torch_lib_dir = os.path.join(meipass_dir, "torch", "lib")
+    try:
+        os.add_dll_directory(meipass_dir)
+    except Exception:
+        pass
 else:
     # 源码直接运行环境
     torch_lib_dir = os.path.join(sys.prefix, "Lib", "site-packages", "torch", "lib")
@@ -18,6 +25,15 @@ if os.path.exists(torch_lib_dir):
     except Exception:
         pass
     os.environ["PATH"] = torch_lib_dir + os.pathsep + os.environ.get("PATH", "")
+
+    # 显式预先按顺序加载核心依赖 DLL，规避 Windows c10.dll WinError 1114 动态初始化失败问题
+    for dll_name in ["libiomp5md.dll", "vcomp140.dll", "asmjit.dll", "c10.dll"]:
+        dll_path = os.path.join(torch_lib_dir, dll_name)
+        if os.path.exists(dll_path):
+            try:
+                ctypes.CDLL(dll_path)
+            except Exception:
+                pass
 
 import torch
 from ultralytics import YOLO
