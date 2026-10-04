@@ -26,7 +26,23 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build EXE with PyInstaller
+      - name: Build Portable Directory (Recommended for PyTorch DLL stability)
+        run: |
+          pyinstaller --noconfirm --onedir --windowed `
+            --name "SecretWeapon-Portable" `
+            --collect-all ultralytics `
+            --collect-all torch `
+            --add-data "dataset;dataset" `
+            --add-data "map;map" `
+            --add-data "best.pt;." `
+            --add-data "yolov8n.pt;." `
+            yolo_detector.py
+
+      - name: Compress Portable Directory
+        run: |
+          Compress-Archive -Path dist/SecretWeapon-Portable -DestinationPath dist/SecretWeapon-Windows-Portable.zip
+
+      - name: Build Single File EXE
         run: |
           pyinstaller --noconfirm --onefile --windowed `
             --name "SecretWeapon" `
@@ -38,9 +54,16 @@ jobs:
             --add-data "yolov8n.pt;." `
             yolo_detector.py
 
-      - name: Upload SecretWeapon.exe Artifact
+      - name: Upload Portable Zip Artifact (Recommended)
         uses: actions/upload-artifact@v4
         with:
-          name: SecretWeapon-Windows-Exe
+          name: SecretWeapon-Windows-Portable-Zip
+          path: dist/SecretWeapon-Windows-Portable.zip
+          retention-days: 30
+
+      - name: Upload Single File EXE Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecretWeapon-Windows-SingleFile-Exe
           path: dist/SecretWeapon.exe
           retention-days: 30

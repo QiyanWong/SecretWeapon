@@ -8,11 +8,15 @@ os.environ["KMP_INIT_AT_FORK"] = "FALSE"
 os.environ["OMP_NUM_THREADS"] = "1"
 
 if getattr(sys, 'frozen', False):
-    # PyInstaller 单文件/文件夹打包运行环境
-    meipass_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    # PyInstaller 单文件/绿色文件夹打包运行环境
+    exe_dir = os.path.dirname(sys.executable)
+    meipass_dir = getattr(sys, '_MEIPASS', exe_dir)
     torch_lib_dir = os.path.join(meipass_dir, "torch", "lib")
+    if not os.path.exists(torch_lib_dir):
+        torch_lib_dir = os.path.join(exe_dir, "torch", "lib")
     try:
         os.add_dll_directory(meipass_dir)
+        os.add_dll_directory(exe_dir)
     except Exception:
         pass
 else:
