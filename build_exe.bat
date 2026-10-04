@@ -26,6 +26,8 @@ pyinstaller --noconfirm --onefile --windowed ^
   --name "SecretWeapon" ^
   --collect-all ultralytics ^
   --collect-all torch ^
+  --collect-all torchvision ^
+  --copy-metadata ultralytics ^
   --add-data "dataset;dataset" ^
   --add-data "map;map" ^
   --add-data "best.pt;." ^

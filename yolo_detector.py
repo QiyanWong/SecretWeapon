@@ -1833,8 +1833,15 @@ class DetectorApp(QMainWindow):
         player_state = None
 
         if self.is_detection_enabled or self.is_bot_running:
-            raw_results = self.model.predict(game_frame, conf=0.01, verbose=False)
-            raw_boxes = raw_results[0].boxes if len(raw_results) > 0 else []
+            raw_boxes = []
+            try:
+                raw_results = self.model.predict(game_frame, conf=0.01, verbose=False)
+                raw_boxes = raw_results[0].boxes if len(raw_results) > 0 else []
+            except Exception as e:
+                now_t = time.time()
+                if now_t - getattr(self, '_last_predict_err_time', 0.0) > 3.0:
+                    self._last_predict_err_time = now_t
+                    self.log(f"【YOLO 推理报错】{e}")
 
             if len(raw_boxes) > 0:
                 for box in raw_boxes:
