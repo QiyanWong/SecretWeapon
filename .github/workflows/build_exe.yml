@@ -26,7 +26,23 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build Portable Directory (Recommended for PyTorch DLL stability)
+      # PyQt5 ships its own outdated MSVC runtime (msvcp140.dll etc.). When bundled, it is
+      # loaded instead of the system copy and makes torch's c10.dll fail with WinError 1114.
+      # Overwrite them with the runner's up-to-date System32 copies before packaging.
+      - name: Replace outdated MSVC runtime DLLs bundled with PyQt5
+        run: |
+          $pyqtDir = python -c "import PyQt5, os; print(os.path.dirname(PyQt5.__file__))"
+          Get-ChildItem -Path $pyqtDir -Recurse -Include msvcp140*.dll, vcruntime140*.dll | ForEach-Object {
+            $sysDll = Join-Path $env:SystemRoot "System32\$($_.Name)"
+            if (Test-Path $sysDll) {
+              $oldVer = $_.VersionInfo.FileVersion
+              Copy-Item $sysDll $_.FullName -Force
+              $newVer = (Get-Item $_.FullName).VersionInfo.FileVersion
+              Write-Host "Replaced $($_.FullName): $oldVer -> $newVer"
+            }
+          }
+
+      - name: Build Portable Directory (Recommended)
         run: |
           pyinstaller --noconfirm --onedir --windowed `
             --name "SecretWeapon-Portable" `
@@ -41,6 +57,23 @@ jobs:
       - name: Compress Portable Directory
         run: |
           Compress-Archive -Path dist/SecretWeapon-Portable -DestinationPath dist/SecretWeapon-Windows-Portable.zip
+
+      # Same as Portable, but with a console window so print() output and tracebacks are visible.
+      - name: Build Debug Console Directory
+        run: |
+          pyinstaller --noconfirm --onedir --console `
+            --name "SecretWeapon-Debug" `
+            --collect-all ultralytics `
+            --collect-all torch `
+            --add-data "dataset;dataset" `
+            --add-data "map;map" `
+            --add-data "best.pt;." `
+            --add-data "yolov8n.pt;." `
+            yolo_detector.py
+
+      - name: Compress Debug Directory
+        run: |
+          Compress-Archive -Path dist/SecretWeapon-Debug -DestinationPath dist/SecretWeapon-Windows-Debug.zip
 
       - name: Build Single File EXE
         run: |
@@ -59,6 +92,13 @@ jobs:
         with:
           name: SecretWeapon-Windows-Portable-Zip
           path: dist/SecretWeapon-Windows-Portable.zip
+          retention-days: 30
+
+      - name: Upload Debug Console Zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecretWeapon-Windows-Debug-Zip
+          path: dist/SecretWeapon-Windows-Debug.zip
           retention-days: 30
 
       - name: Upload Single File EXE Artifact

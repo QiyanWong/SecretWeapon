@@ -10,7 +10,18 @@ pip install -r requirements.txt
 pip install pyinstaller
 
 echo.
-echo 2. 开始打包 yolo_detector.py 为单文件 Executable...
+echo 2. 用系统 System32 中的新版 VC++ 运行库替换 PyQt5 自带的旧版 (避免 c10.dll WinError 1114)...
+echo    (请确保本机已安装最新 vc_redist.x64.exe)
+for /f "delims=" %%i in ('python -c "import PyQt5,os;print(os.path.dirname(PyQt5.__file__))"') do set "PYQT_DIR=%%i"
+for /r "%PYQT_DIR%" %%f in (msvcp140*.dll vcruntime140*.dll) do (
+    if exist "%SystemRoot%\System32\%%~nxf" (
+        copy /y "%SystemRoot%\System32\%%~nxf" "%%f" >nul
+        echo    已替换: %%f
+    )
+)
+
+echo.
+echo 3. 开始打包 yolo_detector.py 为单文件 Executable...
 pyinstaller --noconfirm --onefile --windowed ^
   --name "SecretWeapon" ^
   --collect-all ultralytics ^
