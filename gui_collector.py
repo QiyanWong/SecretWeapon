@@ -78,7 +78,7 @@ def capture_window_hwnd(hwnd):
 class CaptureApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("冒险岛 YOLO 图像数据集采集助手 v1.0")
+        self.setWindowTitle("2D Game YOLO 图像数据集采集助手 v1.0")
         self.resize(880, 620)
         self.setMinimumSize(800, 550)
 
@@ -413,7 +413,7 @@ class CaptureApp(QMainWindow):
 
         # 保存图片（兼容包含中文的路径）
         timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:20]
-        filename = f"maple_{timestamp_str}.jpg"
+        filename = f"frame_{timestamp_str}.jpg"
         filepath = os.path.join(SAVE_DIR, filename)
 
         try:

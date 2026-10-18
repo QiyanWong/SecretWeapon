@@ -268,7 +268,7 @@ class MinimapTracker:
 
     def locate_player_pos(self, minimap_bgr):
         """
-        三引擎高精定位冒险岛小地图玩家标志：
+        三引擎高精定位 2D 游戏小地图玩家标志：
         引擎 1: 官方 RGBA 模板 + Alpha 掩膜归一化相关性匹配 (TM_CCORR_NORMED, 100% 隔离背景)
         引擎 2: HSV 金黄点高精度连通域提取 (自适应多帧闪烁)
         引擎 3: 传统 BGR 模板匹配与上一帧记忆中继

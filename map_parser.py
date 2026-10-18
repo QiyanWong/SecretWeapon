@@ -65,7 +65,7 @@ class LadderRope:
 
 class MapParser:
     """
-    冒险岛 WZ 地图 XML 核心数据解析器
+    2D 游戏地图 XML 核心数据解析器
     """
     def __init__(self, xml_path=None):
         self.xml_path = xml_path

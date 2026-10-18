@@ -9,7 +9,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DIR = os.path.join(BASE_DIR, "dataset", "raw_images")
 
-# 将中文标注名称精准映射到官方《冒险岛》英文名
+# 将中文标注名称映射到 2D Game 类别英文名
 LABEL_MAPPING = {
     # 玩家状态与地图要素
     '我左': 'player_left',
@@ -20,7 +20,7 @@ LABEL_MAPPING = {
     '绳子': 'rope',
     '光圈': 'portal',
 
-    # 冒险岛经典怪物官方英文对应表
+    # 2D Game 怪物英文对应表
     '花蘑菇': 'orange_mushroom',
     '红蜗牛': 'red_snail',
     '绿水灵': 'slime',

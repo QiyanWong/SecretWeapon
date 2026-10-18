@@ -52,7 +52,7 @@ OUTPUT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'syntheti
 os.makedirs(OUTPUT_ROOT, exist_ok=True)
 
 print("=" * 70)
-print(f"🚀 开始从 maplestory.io 批量下载 data.yaml 包含的 {len(MOB_MAPPING)} 种怪物全套透明素材...")
+print(f"🚀 开始批量下载 data.yaml 包含的 {len(MOB_MAPPING)} 种怪物全套透明素材...")
 print("=" * 70)
 
 total_sprites_downloaded = 0

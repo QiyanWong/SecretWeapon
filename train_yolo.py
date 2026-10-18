@@ -148,7 +148,7 @@ def run_training(epochs=60, imgsz=800, batch=8):
         degrees=0.0,
         fliplr=0.0,
         mosaic=0.5,
-        name='maple_yolo_run',
+        name='2dgame_yolo_run',
         project=os.path.join(BASE_DIR, 'runs', 'detect')
     )
 
@@ -157,7 +157,7 @@ def run_training(epochs=60, imgsz=800, batch=8):
     
     # 动态查找并备份最优权重
     save_dir = getattr(results, 'save_dir', None)
-    best_weights_path = os.path.join(save_dir, 'weights', 'best.pt') if save_dir else os.path.join(BASE_DIR, 'runs', 'detect', 'maple_yolo_run', 'weights', 'best.pt')
+    best_weights_path = os.path.join(save_dir, 'weights', 'best.pt') if save_dir else os.path.join(BASE_DIR, 'runs', 'detect', '2dgame_yolo_run', 'weights', 'best.pt')
     target_weights_path = os.path.join(BASE_DIR, 'best.pt')
 
     if os.path.exists(best_weights_path):
@@ -176,7 +176,7 @@ def run_training(epochs=60, imgsz=800, batch=8):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="冒险岛 YOLOv8 训练脚本")
+    parser = argparse.ArgumentParser(description="2D Game YOLOv8 训练脚本")
     parser.add_argument("--epochs", type=int, default=60, help="训练轮数 (默认 60)")
     parser.add_argument("--batch", type=int, default=8, help="Batch 大小 (默认 8)")
     args = parser.parse_args()

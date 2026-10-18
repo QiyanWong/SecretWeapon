@@ -3,5 +3,6 @@
   "custom_python_path": "",
   "custom_model_path": "best.pt",
   "default_xml_map_dir": "map",
+  "target_window_keywords": ["Game", "2D Game"],
   "debug_mode": false
 }

@@ -20,7 +20,7 @@ map_id = 101030112  # 金银岛 - 第3军营 (Excavation: Military Camp 3)
 url = f"https://maplestory.io/api/GMS/83/map/{map_id}/render"
 
 print("=" * 60)
-print(f"📥 从 maplestory.io 下载【第3军营】全景地图 (Map ID: {map_id})...")
+print(f"📥 下载【第3军营】全景地图 (Map ID: {map_id})...")
 print("=" * 60)
 
 req = urllib.request.Request(url, headers=headers)

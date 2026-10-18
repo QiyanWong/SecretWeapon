@@ -193,7 +193,7 @@ class ClickableLabel(QLabel):
 class DetectorApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("冒险岛 YOLO 自动打怪与策略控制台 (特征过滤与 Debug 掩膜版) v2.5")
+        self.setWindowTitle("2D Game YOLO 自动打怪与策略控制台 (特征过滤与 Debug 掩膜版) v2.5")
         self.resize(1420, 920)
         self.setMinimumSize(1200, 750)
 
@@ -424,7 +424,7 @@ class DetectorApp(QMainWindow):
         self.lbl_display.setAlignment(Qt.AlignCenter)
         self.lbl_display.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.lbl_display.setMinimumSize(380, 220)
-        self.lbl_display.setText("请在上方下拉菜单中绑定《冒险岛》游戏窗口")
+        self.lbl_display.setText("请在上方下拉菜单中绑定游戏窗口")
         left_layout.addWidget(self.lbl_display, 3)
 
         # 日志诊断框
@@ -1059,7 +1059,7 @@ class DetectorApp(QMainWindow):
         self.is_auto_screenshot = self.btn_auto_screenshot.isChecked()
         if self.is_auto_screenshot:
             if not self.selected_hwnd or not win32gui.IsWindow(self.selected_hwnd):
-                self.log("【警告】尚未绑定有效的游戏窗口！请先在顶部选择框绑定《冒险岛》游戏窗口再开启截图！")
+                self.log("【警告】尚未绑定有效的游戏窗口！请先在顶部选择框绑定游戏窗口再开启截图！")
             self.screenshot_count = 0
             self.btn_auto_screenshot.setText("📸 自动截图: 开启 (0张)")
             self.btn_auto_screenshot.setStyleSheet("background-color: #f38ba8; color: #11111b;")
@@ -1093,7 +1093,7 @@ class DetectorApp(QMainWindow):
 
         if frame_to_save is None:
             if not self.selected_hwnd or not win32gui.IsWindow(self.selected_hwnd):
-                self.log("【截图失败】尚未绑定游戏窗口！请先在顶部下拉框中选择《冒险岛》或游戏窗口！")
+                self.log("【截图失败】尚未绑定游戏窗口！请先在顶部下拉框中选择游戏窗口！")
             else:
                 self.log("【截图失败】未能捕获到有效画面（游戏窗口可能已最小化）。")
             return
@@ -1289,9 +1289,21 @@ class DetectorApp(QMainWindow):
         windows = get_open_windows()
         auto_target_index = -1
 
+        # 加载目标窗口关键词匹配 (优先从本地 runtime_config.json 获取，保证通用性)
+        target_keywords = ["2d game", "game"]
+        cfg_path = os.path.join(BASE_DIR, "runtime_config.json")
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                    if "target_window_keywords" in cfg and isinstance(cfg["target_window_keywords"], list):
+                        target_keywords = [str(k).lower() for k in cfg["target_window_keywords"]]
+            except Exception:
+                pass
+
         for idx, (hwnd, title) in enumerate(windows):
             self.cb_windows.addItem(f"{title} (HWND: {hwnd})", hwnd)
-            if any(k in title.lower() for k in ["冒险岛", "maple", "maplestory"]):
+            if any(k in title.lower() for k in target_keywords):
                 auto_target_index = idx + 1
 
         self.cb_windows.blockSignals(False)

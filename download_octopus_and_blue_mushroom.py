@@ -47,7 +47,7 @@ TARGET_MOBS = [
 
 def fetch_frames_for_action(mob_id, action):
     frames = []
-    # 策略 1: 尝试 maplestory.io 动态渲染动图 (GMS/83 节点)
+    # 策略 1: 尝试在线 API 动态渲染动图 (GMS/83 节点)
     render_url = f"https://maplestory.io/api/GMS/83/mob/{mob_id}/render/{action}"
     try:
         req = urllib.request.Request(render_url, headers=headers)

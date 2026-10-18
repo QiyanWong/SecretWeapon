@@ -210,7 +210,7 @@ OUTPUT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'syntheti
 os.makedirs(OUTPUT_ROOT, exist_ok=True)
 
 print("=" * 75)
-print(f"🚀 开始从 maplestory.io 批量下载全部 {len(DROP_ITEMS_MAPPING)} 种掉落物 (金币+怪物战利品)...")
+print(f"🚀 开始批量下载全部 {len(DROP_ITEMS_MAPPING)} 种掉落物 (金币+怪物战利品)...")
 print("=" * 75)
 
 summary = []

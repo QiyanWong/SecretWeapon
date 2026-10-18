@@ -47,7 +47,7 @@ class Input(ctypes.Structure):
     _fields_ = [("type", ctypes.c_ulong),
                 ("ii", Input_I)]
 
-# 冒险岛底层是 DirectX 引擎，通常拦截了虚拟键码 (Virtual Key Codes)
+# 2D 游戏底层若基于 DirectX 引擎，通常拦截了虚拟键码 (Virtual Key Codes)
 # 我们必须使用 DirectInput 的硬件扫描码 (Scan Codes) 才能让游戏识别
 DIK_KEYS = {
     'ESCAPE': 0x01, '1': 0x02, '2': 0x03, '3': 0x04, '4': 0x05, '5': 0x06, '6': 0x07, '7': 0x08, '8': 0x09, '9': 0x0A, '0': 0x0B,
@@ -79,7 +79,7 @@ def PressKey(hexKeyCode):
     flags = 0x0008  # KEYEVENTF_SCANCODE
     scan_code = hexKeyCode
     
-    # 冒险岛/DirectInput 中，方向键(UP/DOWN/LEFT/RIGHT)等扩展键的扫描码会带有 0x80 最高位
+    # 2D Game DirectInput 中，方向键(UP/DOWN/LEFT/RIGHT)等扩展键的扫描码会带有 0x80 最高位
     # SendInput 需要剥离这个最高位，并加上 KEYEVENTF_EXTENDEDKEY (0x0001) 标志
     if scan_code & 0x80:
         flags |= 0x0001  # KEYEVENTF_EXTENDEDKEY

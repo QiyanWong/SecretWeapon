@@ -5,7 +5,7 @@ import numpy as np
 
 class HpMpDetector:
     """
-    《冒险岛》角色生命值 (HP) 与魔法值 (MP) 毫秒级高精度视觉监测器
+    2D 游戏角色生命值 (HP) 与魔法值 (MP) 毫秒级高精度视觉监测器
     基于状态栏模板定位 + HSV 动态连续填充扫描算法
     """
 
@@ -76,7 +76,7 @@ class HpMpDetector:
         if frame_h < 100 or frame_w < 300:
             return self.last_hp, self.last_mp, False, None
 
-        # 1. 限制搜索区域为底部 180 像素 (MapleStory 状态栏永久固定在底部)
+        # 1. 限制搜索区域为底部 180 像素 (2D Game 状态栏通常固定在底部)
         search_top = max(0, frame_h - 180)
         search_roi = game_frame[search_top:frame_h, :]
 

@@ -10,14 +10,19 @@ runs/
 models/
 weights/
 
-# Dataset generated and local training data
+# Training & synthetic asset image materials
+synthetic_assets/
 dataset/images/
 dataset/labels/
 dataset/raw_images/
+dataset/train/
+dataset/val/
+dataset/test/
 dataset/routes/
 dataset/debug_snapshots/
 dataset/synthetic_debug/
 dataset/frame_*.jpg
+dataset/frame_*.png
 dataset/raw_images_backup/
 dataset/backup_real_frames/
 scratch/
