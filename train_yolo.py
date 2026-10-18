@@ -52,7 +52,10 @@ CLASS_NAMES = [
     'skeleton_soldier',
     'officer_skeleton',
     'octopus',
-    'blue_mushroom'
+    'blue_mushroom',
+    'jr_yeti',
+    'hector',
+    'white_fang'
 ]
 
 

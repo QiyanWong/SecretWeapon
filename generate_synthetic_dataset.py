@@ -26,7 +26,7 @@ DEBUG_OUTPUT_DIR = os.path.join(BASE_DIR, "dataset", "synthetic_debug")
 os.makedirs(RAW_OUTPUT_DIR, exist_ok=True)
 os.makedirs(DEBUG_OUTPUT_DIR, exist_ok=True)
 
-# 25 类别定义 (2 玩家朝向 + 23 活体怪物)
+# 35 类别定义 (2 玩家朝向 + 33 活体怪物)
 CLASS_LIST = [
     'player_left',
     'player_right',
@@ -59,7 +59,10 @@ CLASS_LIST = [
     'skeleton_soldier',
     'officer_skeleton',
     'octopus',
-    'blue_mushroom'
+    'blue_mushroom',
+    'jr_yeti',
+    'hector',
+    'white_fang'
 ]
 CLASS_TO_ID = {name: i for i, name in enumerate(CLASS_LIST)}
 MONSTER_CLASSES = CLASS_LIST[2:]
@@ -93,7 +96,10 @@ MONSTER_TO_UNIQUE_DROP = {
     'skeleton_soldier': 'rib',
     'officer_skeleton': 'pelvic_bone',
     'octopus':          'octopus_leg',
-    'blue_mushroom':    'blue_mushroom_cap'
+    'blue_mushroom':    'blue_mushroom_cap',
+    'jr_yeti':          'jr_yeti_skin',
+    'hector':           'hector_tail',
+    'white_fang':       'white_fang_tail'
 }
 
 
@@ -452,9 +458,9 @@ def generate_dataset():
         total_generated += 1
         print(f"   ✓ [纯背景] {out_name}.jpg (地图: {bg_name})")
 
-    # ================= 阶段 2: 纯清晰【无重叠】双重全帧覆盖 + 多玩家形态 + 宠物 (不标注) =================
-    print(f"\n[Phase 2] 正在生成【清晰无重叠】基础场景 (保证全怪物动作帧双重全覆盖 + 玩家 + 宠物)...")
-    clean_coverage_deck = flat_monster_deck.copy() + flat_monster_deck.copy()
+    # ================= 阶段 2: 纯清晰【无重叠】多倍全帧覆盖 + 多玩家形态 + 宠物 (不标注) =================
+    print(f"\n[Phase 2] 正在生成【清晰无重叠】基础场景 (每张图容纳 6~10 种不同怪物，提升训练信息密度与学习效率)...")
+    clean_coverage_deck = flat_monster_deck.copy() * 4
     random.shuffle(clean_coverage_deck)
 
     p2_img_idx = 0
@@ -474,17 +480,25 @@ def generate_dataset():
         json_shapes = []
         placed_boxes = [] # (x1, y1, x2, y2, cls_name)
 
-        # 单张图抽取 3 ~ 5 个不同的动作帧
+        # 单张图抽取 6 ~ 10 个怪物动作帧 (优先选取不同种类的怪物，大幅提高单图类别多样性与训练效率)
         mobs_to_place = []
-        for _ in range(random.randint(3, 5)):
+        target_count = random.randint(6, 10)
+        for _ in range(target_count):
             if not clean_coverage_deck:
                 break
+            # 1. 优先选取画面中尚未出现过的怪物种类
             for i, cand in enumerate(clean_coverage_deck):
-                if cand["name"] not in [m["name"] for m in mobs_to_place]:
+                if cand["class_name"] not in [m["class_name"] for m in mobs_to_place]:
                     mobs_to_place.append(clean_coverage_deck.pop(i))
                     break
             else:
-                mobs_to_place.append(clean_coverage_deck.pop(0))
+                # 2. 种类已涵盖则选取动作帧不同的
+                for i, cand in enumerate(clean_coverage_deck):
+                    if cand["name"] not in [m["name"] for m in mobs_to_place]:
+                        mobs_to_place.append(clean_coverage_deck.pop(i))
+                        break
+                else:
+                    mobs_to_place.append(clean_coverage_deck.pop(0))
 
         # 无重叠放置怪物
         for m_item in mobs_to_place:
@@ -499,12 +513,12 @@ def generate_dataset():
             sh = max(10, int(m_img.height * scale))
             m_scaled = m_img.resize((sw, sh), Image.Resampling.LANCZOS)
 
-            for attempt in range(40):
+            for attempt in range(50):
                 pos_x = random.randint(30, tw - sw - 30)
                 pos_y = random.randint(int(th * 0.22), th - sh - 30)
                 cand_box = (pos_x, pos_y, pos_x + sw, pos_y + sh, m_cls)
 
-                collision = any(check_box_collision(cand_box, pb, allow_same_species_overlap=False, margin=25) for pb in placed_boxes)
+                collision = any(check_box_collision(cand_box, pb, allow_same_species_overlap=False, margin=18) for pb in placed_boxes)
                 if not collision:
                     canvas.paste(m_scaled, (pos_x, pos_y), m_scaled)
                     placed_boxes.append(cand_box)
@@ -720,9 +734,9 @@ def generate_dataset():
     print(f"   ✓ 阶段 3 同种怪重叠场景生成完成，共 {p3_img_idx} 张图！")
 
     print("\n" + "=" * 75)
-    print(f"🎉 全部合成大功告成！总计生成 {total_generated} 张图像 (30 类别对齐):")
+    print(f"🎉 全部合成大功告成！总计生成 {total_generated} 张图像 (35 类别对齐):")
     print(f"   - 阶段 1: 9 张纯背景负样本 (含散落金币/道具/宠物抗干扰)")
-    print(f"   - 阶段 2: {p2_img_idx} 张清晰【无重叠】全帧双重覆盖 + 新外观玩家 + 宠物干扰 (不标注)")
+    print(f"   - 阶段 2: {p2_img_idx} 张清晰【无重叠】高密度全帧覆盖 (每张 6~10 种不同怪 + 新外观玩家 + 宠物干扰)")
     print(f"   - 阶段 3: {p3_img_idx} 张【同种怪适度重叠】+ 新外观玩家 + 宠物干扰 (不标注)")
     print(f"📁 数据集已保存至: {RAW_OUTPUT_DIR}")
     print(f"🔍 质检图已保存至: {DEBUG_OUTPUT_DIR}")

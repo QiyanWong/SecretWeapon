@@ -7,7 +7,6 @@ __pycache__/
 venv/
 # Training runs & checkpoints
 runs/
-models/
 weights/
 
 # Training & synthetic asset image materials

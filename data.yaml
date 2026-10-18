@@ -31,6 +31,9 @@ names:
   29: officer_skeleton
   30: octopus
   31: blue_mushroom
+  32: jr_yeti
+  33: hector
+  34: white_fang
 path: ./dataset
 train: images/train
 val: images/val

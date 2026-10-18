@@ -83,10 +83,18 @@ LABEL_MAPPING = {
     '章鱼': 'octopus',
     'octopus': 'octopus',
     '蓝蘑菇': 'blue_mushroom',
-    'blue_mushroom': 'blue_mushroom'
+    'blue_mushroom': 'blue_mushroom',
+    '小白雪人': 'jr_yeti',
+    '小雪人': 'jr_yeti',
+    'jr_yeti': 'jr_yeti',
+    '野狼': 'hector',
+    '灰狼': 'hector',
+    'hector': 'hector',
+    '白狼': 'white_fang',
+    'white_fang': 'white_fang'
 }
 
-# 保持固定的类别顺序 (30 类: 2 种玩家朝向 + 28 种怪物)
+# 保持固定的类别顺序 (35 类: 2 种玩家朝向 + 33 种怪物)
 CLASS_LIST = [
     'player_left',
     'player_right',
@@ -119,7 +127,10 @@ CLASS_LIST = [
     'skeleton_soldier',
     'officer_skeleton',
     'octopus',
-    'blue_mushroom'
+    'blue_mushroom',
+    'jr_yeti',
+    'hector',
+    'white_fang'
 ]
 
 CLASS_TO_ID = {name: idx for idx, name in enumerate(CLASS_LIST)}
