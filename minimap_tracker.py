@@ -331,9 +331,10 @@ class MinimapTracker:
         canvas = minimap_bgr.copy()
         ch, cw, _ = canvas.shape
 
-        # ====================== 1. 高级 XML 拓扑与 A* 寻路决策渲染 (统一直接 Overlay 模式) ======================
-        if decision_engine and decision_engine.map_parser and getattr(decision_engine, "pathfinder", None):
+        # ====================== 1. 地图 XML 平台拓扑与多层导航决策渲染 ======================
+        if decision_engine and decision_engine.map_parser:
             mp = decision_engine.map_parser
+            nav = getattr(decision_engine, "navigator", None)
 
             # (1) 绘制全图平台 (Footholds)
             for fh in mp.horizontal_fhs:
@@ -341,6 +342,26 @@ class MinimapTracker:
                 x2_m, y2_m = mp.world_to_minimap(fh.x2, fh.y2, crop_w=cw, crop_h=ch)
                 if 0 <= x1_m < cw or 0 <= x2_m < cw or min(x1_m, x2_m) <= cw // 2 <= max(x1_m, x2_m):
                     cv2.line(canvas, (x1_m, y1_m), (x2_m, y2_m), (60, 180, 60), 1, cv2.LINE_AA)
+
+            # (1.5) 高亮用户标记的打怪平台 (金黄色粗线)
+            if nav and nav.marked:
+                for mid in nav.marked:
+                    mp_plat = nav.graph.platforms.get(mid)
+                    if mp_plat:
+                        for pfh in mp_plat.fhs:
+                            fx1, fy1 = mp.world_to_minimap(pfh.x1, pfh.y1, crop_w=cw, crop_h=ch)
+                            fx2, fy2 = mp.world_to_minimap(pfh.x2, pfh.y2, crop_w=cw, crop_h=ch)
+                            cv2.line(canvas, (fx1, fy1), (fx2, fy2), (0, 215, 255), 2, cv2.LINE_AA)
+                        cx_m, cy_m = mp.world_to_minimap(mp_plat.center_x, mp_plat.avg_y, crop_w=cw, crop_h=ch)
+                        cv2.putText(canvas, f"★L{mid}", (cx_m - 10, max(12, cy_m - 4)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 215, 255), 1)
+                        
+                        # 绘制该层默认下跳点 (亮橙色中点标记)
+                        drop_x = nav.profile.drop_points.get(str(mid), int(mp_plat.center_x))
+                        dx_m, dy_m = mp.world_to_minimap(drop_x, mp_plat.avg_y, crop_w=cw, crop_h=ch)
+                        cv2.circle(canvas, (dx_m, dy_m), 3, (0, 165, 255), -1)
+                        cv2.putText(canvas, "v", (dx_m - 3, dy_m + 6),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.28, (0, 165, 255), 1)
 
             # (2) 绘制全图梯子/绳索 (LadderRopes)
             for lr in mp.ladder_ropes:
@@ -351,24 +372,19 @@ class MinimapTracker:
                     cv2.line(canvas, (lx1_m - 3, ly1_m), (lx1_m + 3, ly1_m), (255, 0, 255), 2)
                     cv2.line(canvas, (lx1_m - 3, ly2_m), (lx1_m + 3, ly2_m), (255, 0, 255), 2)
 
-            # (3) 绘制当前执行的 A* 路径折线序列
-            active_path = getattr(decision_engine, "active_path", [])
-            cur_step_idx = getattr(decision_engine, "current_step_idx", 0)
-            
-            if active_path:
+            # (3) 绘制跨层跃迁路径 (梯子/下跳)
+            if nav and nav.route and nav.route_idx < len(nav.route):
                 prev_pt = player_pos if player_pos else None
-                for s_idx, step in enumerate(active_path):
-                    sx_m, sy_m = mp.world_to_minimap(step.target_x, step.target_y, crop_w=cw, crop_h=ch)
-                    is_current = (s_idx == cur_step_idx)
-                    pt_color = (0, 255, 255) if is_current else (220, 220, 0)
-                    
+                for idx, (e, ax) in enumerate(nav.route[nav.route_idx:]):
+                    tgt_y = e.exit_y if (e.kind == "CLIMB" and e.exit_y is not None) else nav.graph.platforms[e.dst].avg_y
+                    ex_m, ey_m = mp.world_to_minimap(ax, tgt_y, crop_w=cw, crop_h=ch)
+                    color = (255, 0, 255) if e.kind == "CLIMB" else (0, 165, 255)
                     if prev_pt is not None:
-                        cv2.line(canvas, prev_pt, (sx_m, sy_m), pt_color, 2 if is_current else 1, cv2.LINE_AA)
-                    
-                    cv2.circle(canvas, (sx_m, sy_m), 4 if is_current else 3, pt_color, -1)
-                    prev_pt = (sx_m, sy_m)
+                        cv2.line(canvas, prev_pt, (ex_m, ey_m), color, 2, cv2.LINE_AA)
+                    cv2.circle(canvas, (ex_m, ey_m), 4, color, -1)
+                    prev_pt = (ex_m, ey_m)
 
-            # (4) 绘制玩家当前吸附的 Foothold 平台 (荧光绿高亮)
+            # (4) 绘制玩家当前吸附的 Foothold 平台与安全区
             if player_pos:
                 px_disp, py_disp = player_pos
                 px_w, py_w = mp.minimap_to_world(player_pos[0], player_pos[1], crop_w=cw, crop_h=ch)
@@ -381,7 +397,7 @@ class MinimapTracker:
                     cv2.putText(canvas, f"FH#{cur_fh.id}", (fh_x1_m, max(12, fh_y1_m - 4)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 0), 1)
 
-                # 🌟 平台打怪模式：高亮安全区 (亮青/黄) 与两端危险区 (亮红粗线)
+                # 🌟 默认永久开启的平台安全区 (亮青) 与两端危险区 (亮红粗线)
                 d_margin_l = getattr(decision_engine, "current_danger_margin_left", getattr(decision_engine, "current_danger_margin", 150)) if decision_engine else 150
                 d_margin_r = getattr(decision_engine, "current_danger_margin_right", getattr(decision_engine, "current_danger_margin", 150)) if decision_engine else 150
                 p_bounds = getattr(decision_engine, "current_platform_bounds", None)
@@ -452,36 +468,14 @@ class MinimapTracker:
                 cv2.putText(canvas, f"({px_w},{py_w})", (px_disp - 20, max(14, py_disp - 10)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
 
-            # (4.5) 绘制用户录制的巡逻路点 (P1, P2, P3...) 与航点连线
-            if route_manager and route_manager.nodes:
-                prev_n_pt = None
-                first_n_pt = None
-                for node in route_manager.nodes:
-                    nx_disp, ny_disp = node.x, node.y
-                    cv2.circle(canvas, (nx_disp, ny_disp), 3, (0, 165, 255), -1)
-                    cv2.putText(canvas, f"P{node.node_id}", (nx_disp - 8, max(10, ny_disp - 6)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 215, 255), 1)
-
-                    if prev_n_pt is not None:
-                        cv2.line(canvas, prev_n_pt, (nx_disp, ny_disp), (0, 165, 255), 1, cv2.LINE_AA)
-                    else:
-                        first_n_pt = (nx_disp, ny_disp)
-                    prev_n_pt = (nx_disp, ny_disp)
-                
-                # 首尾闭环连线 (录制 >= 2 个节点时)
-                if len(route_manager.nodes) >= 2 and first_n_pt and prev_n_pt:
-                    cv2.line(canvas, prev_n_pt, first_n_pt, (0, 100, 200), 1, cv2.LINE_AA)
-
             # (5) 绘制顶部 HUD 决策状态条
-            is_plat_patrol = getattr(decision_engine, "enable_platform_patrol", False) if decision_engine else False
-            mode_tag = "🛡️ 平台巡逻" if is_plat_patrol else "🌟 A* 寻路"
             offset_info = f" | 偏移:({mp.offset_x},{mp.offset_y})" if (mp.offset_x != 0 or mp.offset_y != 0) else ""
-            rec_tag = f" | 录制路点:{len(route_manager.nodes)}" if (route_manager and route_manager.nodes) else ""
-            if active_path and cur_step_idx < len(active_path):
-                cur_step = active_path[cur_step_idx]
-                step_info = f"[{mode_tag}] {cur_step.action} ({cur_step_idx+1}/{len(active_path)}){rec_tag}{offset_info}"
+            if nav:
+                tg_cnt = len(nav.targets())
+                status_str = nav.status
+                step_info = f"[多层导航] {status_str} (打怪层:{tg_cnt}个){offset_info}"
             else:
-                step_info = f"[{mode_tag}] IDLE/巡航{rec_tag}{offset_info}"
+                step_info = f"[平台巡逻] 安全区保护中{offset_info}"
                 
             cv2.putText(canvas, step_info, (4, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 255), 1)
             return canvas

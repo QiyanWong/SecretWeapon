@@ -2,9 +2,13 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+# Virtual environments
+.venv/
+venv/
 # Training runs & checkpoints
 runs/
+models/
+weights/
 
 # Dataset generated and local training data
 dataset/images/
@@ -15,6 +19,7 @@ dataset/debug_snapshots/
 dataset/synthetic_debug/
 dataset/frame_*.jpg
 dataset/raw_images_backup/
+dataset/backup_real_frames/
 scratch/
 .system_generated/
 

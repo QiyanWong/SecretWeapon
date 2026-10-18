@@ -4,6 +4,7 @@ import glob
 import json
 import random
 import datetime
+import re
 import cv2
 import numpy as np
 from PIL import Image, ImageEnhance
@@ -56,7 +57,9 @@ CLASS_LIST = [
     'wraith',
     'jr_boogie',
     'skeleton_soldier',
-    'officer_skeleton'
+    'officer_skeleton',
+    'octopus',
+    'blue_mushroom'
 ]
 CLASS_TO_ID = {name: i for i, name in enumerate(CLASS_LIST)}
 MONSTER_CLASSES = CLASS_LIST[2:]
@@ -88,7 +91,9 @@ MONSTER_TO_UNIQUE_DROP = {
     'wraith':          'tablecloth',
     'jr_boogie':       'jr_boogie_horn',
     'skeleton_soldier': 'rib',
-    'officer_skeleton': 'pelvic_bone'
+    'officer_skeleton': 'pelvic_bone',
+    'octopus':          'octopus_leg',
+    'blue_mushroom':    'blue_mushroom_cap'
 }
 
 
@@ -119,38 +124,100 @@ def load_all_monster_sprites():
 
 
 def load_player_sprites():
-    """加载纯净透明的玩家角色形态素材 (区分新外观 real 与通用动作 other)"""
-    player_sprites = {'player_left': {'real': [], 'other': []}, 'player_right': {'real': [], 'other': []}}
-    for p_cls in ['player_left', 'player_right']:
-        folder = os.path.join(PLAYER_DIR, p_cls)
-        if os.path.exists(folder):
-            for p in glob.glob(os.path.join(folder, "*.png")):
-                try:
-                    img = Image.open(p).convert("RGBA")
-                    fname = os.path.basename(p).lower()
-                    # 确保左向朝左，右向朝右
-                    if p_cls == 'player_left' and 'right' in fname and 'real' not in fname:
-                        img = img.transpose(Image.FLIP_LEFT_RIGHT)
-                    elif p_cls == 'player_right' and 'left' in fname and 'real' not in fname:
-                        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    """
+    加载纯净透明的多玩家角色形态素材 (支持 player1, player2 ... 等多玩家子目录扩展)
+    自动识别朝向并按玩家维度组织，确保在生成合成数据集时均衡采样各玩家外观。
+    """
+    player_sprites = {
+        'player_left': {'real': [], 'other': []},
+        'player_right': {'real': [], 'other': []},
+        'by_player': {} # { player_id: {'player_left': {'real': [], 'other': []}, 'player_right': {'real': [], 'other': []}} }
+    }
 
-                    bx1, by1, bx2, by2 = get_tight_bbox(img)
-                    if bx2 > bx1 and by2 > by1:
-                        img = img.crop((bx1, by1, bx2 + 1, by2 + 1))
+    if not os.path.exists(PLAYER_DIR):
+        return player_sprites
 
-                    if 'real' in fname:
-                        player_sprites[p_cls]['real'].append(img)
-                    else:
-                        player_sprites[p_cls]['other'].append(img)
-                except Exception:
-                    pass
+    for root, dirs, files in os.walk(PLAYER_DIR):
+        if 'backup' in root.lower() or 'old' in root.lower():
+            continue
+        for f in files:
+            if not f.lower().endswith('.png'):
+                continue
+            full_path = os.path.join(root, f)
+            rel_path = os.path.relpath(full_path, PLAYER_DIR).replace('\\', '/')
+
+            # 识别玩家标识 (如 player1, player2)
+            m_player = re.search(r'(player\d+)', rel_path, re.IGNORECASE)
+            player_id = m_player.group(1).lower() if m_player else 'player1'
+
+            folder_name = os.path.basename(root).lower()
+            if 'left' in folder_name:
+                p_cls = 'player_left'
+            elif 'right' in folder_name:
+                p_cls = 'player_right'
+            elif 'left' in rel_path.lower() and 'right' not in rel_path.lower():
+                p_cls = 'player_left'
+            elif 'right' in rel_path.lower() and 'left' not in rel_path.lower():
+                p_cls = 'player_right'
+            else:
+                p_cls = 'player_left' if 'left' in f.lower() else 'player_right'
+
+            try:
+                img = Image.open(full_path).convert("RGBA")
+                fname = f.lower()
+                # 确保左向朝左，右向朝右
+                if p_cls == 'player_left' and 'right' in fname and 'real' not in fname:
+                    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                elif p_cls == 'player_right' and 'left' in fname and 'real' not in fname:
+                    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+
+                bx1, by1, bx2, by2 = get_tight_bbox(img)
+                if bx2 > bx1 and by2 > by1:
+                    img = img.crop((bx1, by1, bx2 + 1, by2 + 1))
+
+                is_real = 'real' in fname
+                target_key = 'real' if is_real else 'other'
+
+                # 存入全局汇聚池
+                player_sprites[p_cls][target_key].append(img)
+
+                # 存入分角色玩家池
+                if player_id not in player_sprites['by_player']:
+                    player_sprites['by_player'][player_id] = {
+                        'player_left': {'real': [], 'other': []},
+                        'player_right': {'real': [], 'other': []}
+                    }
+                player_sprites['by_player'][player_id][p_cls][target_key].append(img)
+            except Exception:
+                pass
+
     return player_sprites
 
 
-def pick_player_sprite(player_sprites, p_cls):
-    """优先采样实装新外观角色帧 (70% 权重)"""
-    real_list = player_sprites[p_cls]['real']
-    other_list = player_sprites[p_cls]['other']
+def pick_player_sprite(player_sprites, p_cls, player_id=None):
+    """
+    支持多玩家素材均衡采样 (优先实装新外观 real 70% 权重)
+    - 若指定 player_id 则从该角色的库中采样;
+    - 否则在所有可用玩家角色中随机均衡选取 (例如 50% player1, 50% player2)
+    """
+    by_player = player_sprites.get('by_player', {})
+    cand_players = [
+        pid for pid, d in by_player.items()
+        if len(d.get(p_cls, {}).get('real', [])) > 0 or len(d.get(p_cls, {}).get('other', [])) > 0
+    ]
+
+    if cand_players:
+        if player_id and player_id in cand_players:
+            target_pid = player_id
+        else:
+            target_pid = random.choice(cand_players)
+        p_dict = by_player[target_pid][p_cls]
+        real_list = p_dict['real']
+        other_list = p_dict['other']
+    else:
+        real_list = player_sprites.get(p_cls, {}).get('real', [])
+        other_list = player_sprites.get(p_cls, {}).get('other', [])
+
     if real_list and (not other_list or random.random() < 0.70):
         return random.choice(real_list)
     elif other_list:
@@ -324,12 +391,14 @@ def generate_dataset():
 
     num_left = len(player_sprites['player_left']['real']) + len(player_sprites['player_left']['other'])
     num_right = len(player_sprites['player_right']['real']) + len(player_sprites['player_right']['other'])
+    p_names = list(player_sprites.get('by_player', {}).keys())
 
     print("=" * 75)
-    print(f"🚀 开始全新分阶段高质量全素材数据集生成流水线 (30 类标准对齐)")
+    print(f"🚀 开始全新分阶段高质量全素材数据集生成流水线 (32 类标准对齐)")
     print(f"   🏞️ 背景地图: {len(bg_files)} 张")
     print(f"   👾 活体怪物总帧数: {len(flat_monster_deck)} 帧 (覆盖 {len(monster_sprites_by_cls)} 种怪物)")
-    print(f"   🤺 玩家形态库: player_left ({num_left} 帧), player_right ({num_right} 帧), 优先使用新外观")
+    print(f"   🤺 多玩家形态库: 涵盖 {len(p_names)} 个玩家角色 ({', '.join(p_names)})")
+    print(f"      - player_left: {num_left} 帧, player_right: {num_right} 帧 (均衡轮换采样)")
     print(f"   🐶 宠物干扰物: {len(pets)} 帧雪人宠物等 (严禁标注，作为背景负样本对抗)")
     print(f"   💎 专属战利品与金币: {len(drops_dict)} 种")
     print("=" * 75)
@@ -455,11 +524,13 @@ def generate_dataset():
                             canvas.paste(d_img, (dx, dy), d_img)
                     break
 
-        # 放置玩家角色 (支持 1~2 个不同姿态形态，严格无重叠，优先实装新外观)
+        # 放置玩家角色 (支持 1~2 个不同姿态形态，严格无重叠，多玩家均衡轮换)
         num_players = random.choice([1, 1, 2, 2])
-        for _ in range(num_players):
+        avail_pids = list(player_sprites.get('by_player', {}).keys())
+        for p_idx in range(num_players):
             p_cls = random.choice(['player_left', 'player_right'])
-            p_img = pick_player_sprite(player_sprites, p_cls)
+            target_pid = avail_pids[p_idx % len(avail_pids)] if avail_pids else None
+            p_img = pick_player_sprite(player_sprites, p_cls, player_id=target_pid)
             if p_img is not None:
                 pw, ph = p_img.size
                 for attempt in range(35):
@@ -601,11 +672,13 @@ def generate_dataset():
                         json_shapes.append({"label": extra_sp, "points": poly_pts, "group_id": None, "description": "", "shape_type": "polygon", "flags": {}})
                         break
 
-        # 放置玩家 (1~2 个，优先新外观)
+        # 放置玩家 (1~2 个，多玩家均衡轮换)
         num_players = random.choice([1, 1, 2])
-        for _ in range(num_players):
+        avail_pids = list(player_sprites.get('by_player', {}).keys())
+        for p_idx in range(num_players):
             p_cls = random.choice(['player_left', 'player_right'])
-            p_img = pick_player_sprite(player_sprites, p_cls)
+            target_pid = avail_pids[p_idx % len(avail_pids)] if avail_pids else None
+            p_img = pick_player_sprite(player_sprites, p_cls, player_id=target_pid)
             if p_img is not None:
                 pw, ph = p_img.size
                 for attempt in range(30):

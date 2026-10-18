@@ -6,6 +6,7 @@ import threading
 
 from map_parser import MapParser
 from a_star_pathfinder import AStarPathfinder, NavAction, NavStep
+from layer_navigator import LayerNavigator, NavContext
 
 class FSMState:
     IDLE = "IDLE"
@@ -36,6 +37,7 @@ class DecisionEngine:
         
         # 高级 XML 地图拓扑寻路系统
         self.map_parser = None
+        self.navigator = None
         self.pathfinder = None
         self.active_path = []            # 当前执行中的 A* 路径步骤序列 [NavStep, ...]
         self.current_step_idx = 0        # 当前步骤索引
@@ -168,15 +170,17 @@ class DecisionEngine:
 
 
     def load_map_xml(self, xml_path):
-        """加载解包地图 XML 并初始化 A* 拓扑寻路器"""
+        """加载解包地图 XML 并初始化多层平台导航器与拓扑寻路器"""
         if not xml_path or not os.path.exists(xml_path):
             print(f"【警告】地图 XML 文件不存在: {xml_path}")
             self.map_parser = None
+            self.navigator = None
             self.pathfinder = None
             return False
             
         try:
             self.map_parser = MapParser(xml_path)
+            self.navigator = LayerNavigator(self.gc, self.map_parser)
             self.pathfinder = AStarPathfinder(self.map_parser)
             self.active_path = []
             self.current_step_idx = 0
@@ -194,13 +198,25 @@ class DecisionEngine:
                 self.patrol_targets.append((mid_x, mid_y, fh.id))
                 
             self.patrol_idx = 0
-            print(f"🗺️ 【高级寻路初始化成功】已提取 {len(self.patrol_targets)} 个主要平台巡逻航点")
+            print(f"🗺️ 【高级寻路初始化成功】已提取 {len(self.patrol_targets)} 个主要平台巡逻航点 | 多层平台导航器已就绪")
             return True
         except Exception as e:
             print(f"【错误】解析地图 XML 失败: {e}")
             self.map_parser = None
+            self.navigator = None
             self.pathfinder = None
             return False
+
+    def toggle_platform_mark(self, xw, yw):
+        """标记或取消标记指定世界坐标所在的平台为打怪层"""
+        if getattr(self, "navigator", None):
+            return self.navigator.toggle_mark_at(xw, yw)
+        return None, False
+
+    def clear_platform_marks(self):
+        """清空所有已标记的打怪平台"""
+        if getattr(self, "navigator", None):
+            self.navigator.clear_marks()
 
     def get_platform_info(self, x_world, y_world, danger_margin=150, danger_margin_left=None, danger_margin_right=None):
         """
@@ -316,9 +332,7 @@ class DecisionEngine:
         self.ATTACK_RANGE_Y = config.get("attack_range_y", 120)
         self.state_switch_interval = config.get("state_switch_interval", 0.5)
 
-        # 🌟 平台打怪模式：最高优先级危险区防掉落避险拦截
-        enable_platform_patrol = config.get("enable_platform_patrol", False)
-        self.enable_platform_patrol = enable_platform_patrol
+        # 🌟 平台安全区防掉落避险拦截 (永久默认开启，所有平台通用硬约束)
         crop_w = config.get("crop_w", None)
         crop_h = config.get("crop_h", None)
         danger_margin_left = config.get("danger_margin_left", config.get("danger_margin", 150))
@@ -327,7 +341,10 @@ class DecisionEngine:
         self.current_danger_margin_right = danger_margin_right
         self.current_danger_margin = max(danger_margin_left, danger_margin_right)
         
-        if enable_platform_patrol and self.map_parser:
+        # 检查是否处于跨层跃迁锁定中 (爬梯或下跳动作进行中，绝对不能被安全区或战斗拦截打断)
+        is_nav_locked = bool(getattr(self, "navigator", None) and self.navigator.is_locked())
+
+        if self.map_parser:
             mx, my = minimap_player_pos
             curr_xw, curr_yw = self.map_parser.minimap_to_world(mx, my, crop_w=crop_w, crop_h=crop_h)
             p_info = self.get_platform_info(curr_xw, curr_yw, 
@@ -338,43 +355,57 @@ class DecisionEngine:
                 self.current_platform_bounds = p_info
                 self.last_platform_bounds_time = now
                 
-                # (1) 落入左侧危险区 (X < safe_left): 强制向右回撤中点，并同步巡逻方向为向右
-                if curr_xw < safe_left:
-                    self.is_escaping_platform_danger = True
-                    self.platform_patrol_dir = "RIGHT"
-                    self.waypoint_spatial_jitter_x = random.randint(0, 8)
-                    self.gc.release_key("LEFT")
-                    self.gc.press_key("RIGHT")
-                    
-                    # 若当前处于战斗状态，立即强制退出战斗
-                    if self.state in [FSMState.COMBAT, FSMState.COMBAT_MOVING]:
-                        self._set_state(FSMState.PATROLLING)
-                        self.combat_target_pos = None
-                        self.combat_start_time = 0
-                        
-                    if now - self.last_platform_danger_log_time >= 1.2:
-                        self.last_platform_danger_log_time = now
-                        print(f"🚨 [平台避险] 玩家落入左侧 {danger_margin_left}px 危险区 (X={curr_xw:.0f} < 安全界限 {safe_left:.0f})！强制退出战斗，往平台安全中点 ({x_mid:.0f}) 紧急回退！")
-                    return
-                    
-                # (2) 落入右侧危险区 (X > safe_right): 强制向左回撤中点，并同步巡逻方向为向左
-                elif curr_xw > safe_right:
-                    self.is_escaping_platform_danger = True
-                    self.platform_patrol_dir = "LEFT"
-                    self.waypoint_spatial_jitter_x = random.randint(0, 8)
-                    self.gc.release_key("RIGHT")
-                    self.gc.press_key("LEFT")
-                    
-                    # 若当前处于战斗状态，立即强制退出战斗
-                    if self.state in [FSMState.COMBAT, FSMState.COMBAT_MOVING]:
-                        self._set_state(FSMState.PATROLLING)
-                        self.combat_target_pos = None
-                        self.combat_start_time = 0
-                        
-                    if now - self.last_platform_danger_log_time >= 1.2:
-                        self.last_platform_danger_log_time = now
-                        print(f"🚨 [平台避险] 玩家落入右侧 {danger_margin_right}px 危险区 (X={curr_xw:.0f} > 安全界限 {safe_right:.0f})！强制退出战斗，往平台安全中点 ({x_mid:.0f}) 紧急回退！")
-                    return
+                # 检查当前平台是否有跃迁放行目标点 (梯子/下跳点)
+                transit_x = self.navigator.transit_x_on(curr_fh.id) if getattr(self, "navigator", None) else None
+
+                if not is_nav_locked:
+                    # (1) 落入左侧危险区 (X < safe_left): 强制向右回撤中点，并同步巡逻方向为向右
+                    if curr_xw < safe_left:
+                        allow_transit = (transit_x is not None and transit_x < safe_left and abs(curr_xw - transit_x) <= 40)
+                        if not allow_transit:
+                            self.is_escaping_platform_danger = True
+                            self.platform_patrol_dir = "RIGHT"
+                            self.waypoint_spatial_jitter_x = random.randint(0, 8)
+                            self.gc.release_key("LEFT")
+                            self.gc.press_key("RIGHT")
+                            
+                            # 若当前处于战斗状态，立即强制退出战斗
+                            if self.state in [FSMState.COMBAT, FSMState.COMBAT_MOVING]:
+                                self._set_state(FSMState.PATROLLING)
+                                self.combat_target_pos = None
+                                self.combat_start_time = 0
+                                
+                            if now - self.last_platform_danger_log_time >= 1.2:
+                                self.last_platform_danger_log_time = now
+                                print(f"🚨 [平台避险] 玩家落入左侧 {danger_margin_left}px 危险区 (X={curr_xw:.0f} < 安全界限 {safe_left:.0f})！强制退出战斗，往平台安全中点 ({x_mid:.0f}) 紧急回退！")
+                            return
+                        else:
+                            self.is_escaping_platform_danger = False
+                            
+                    # (2) 落入右侧危险区 (X > safe_right): 强制向左回撤中点，并同步巡逻方向为向左
+                    elif curr_xw > safe_right:
+                        allow_transit = (transit_x is not None and transit_x > safe_right and abs(curr_xw - transit_x) <= 40)
+                        if not allow_transit:
+                            self.is_escaping_platform_danger = True
+                            self.platform_patrol_dir = "LEFT"
+                            self.waypoint_spatial_jitter_x = random.randint(0, 8)
+                            self.gc.release_key("RIGHT")
+                            self.gc.press_key("LEFT")
+                            
+                            # 若当前处于战斗状态，立即强制退出战斗
+                            if self.state in [FSMState.COMBAT, FSMState.COMBAT_MOVING]:
+                                self._set_state(FSMState.PATROLLING)
+                                self.combat_target_pos = None
+                                self.combat_start_time = 0
+                                
+                            if now - self.last_platform_danger_log_time >= 1.2:
+                                self.last_platform_danger_log_time = now
+                                print(f"🚨 [平台避险] 玩家落入右侧 {danger_margin_right}px 危险区 (X={curr_xw:.0f} > 安全界限 {safe_right:.0f})！强制退出战斗，往平台安全中点 ({x_mid:.0f}) 紧急回退！")
+                            return
+                        else:
+                            self.is_escaping_platform_danger = False
+                    else:
+                        self.is_escaping_platform_danger = False
                 else:
                     self.is_escaping_platform_danger = False
             else:
@@ -469,10 +500,10 @@ class DecisionEngine:
         if self.state == FSMState.IDLE:
             self._set_state(FSMState.PATROLLING)
 
-        # 攀爬锁：仅在真正攀爬绳子/梯子且非平台打怪模式时触发
-        is_climbing = self.is_climbing_rope or (player_state == "climb" and not enable_platform_patrol and not self.current_platform_bounds)
+        # 攀爬与跃迁锁：正在跨层爬梯/下跳时，锁定巡逻状态，不切入战斗
+        is_climbing = is_nav_locked or self.is_climbing_rope or (player_state == "climb" and not self.current_platform_bounds)
         if is_climbing and self.state in [FSMState.COMBAT, FSMState.COMBAT_MOVING]:
-            print("【攀爬锁触发】正在攀爬绳子/梯子，暂停打怪状态，专注登顶！")
+            print("【跨层跃迁锁触发】正在攀爬梯子或执行下跳，暂停打怪状态，专注跨层！")
             self._set_state(FSMState.PATROLLING)
             self.no_monster_start_time = 0
 
@@ -520,8 +551,8 @@ class DecisionEngine:
                 self.combat_target_pos = best_agro_monster
             else:
                 self.first_monster_seen_time = 0
-                # 平台打怪模式下不触发 30s 停止巡逻发呆，保持左右两端持续巡逻
-                if enable_platform_patrol:
+                # 平台打怪模式下不触发 30s 停止巡逻发呆，保持持续巡逻
+                if self.map_parser is not None:
                     self.no_combat_start_time = 0
                 else:
                     # 30 秒连续无战斗脱战检测：如果持续 30 秒没有遇到怪，直接就近在当前节点发呆待机
@@ -625,15 +656,38 @@ class DecisionEngine:
             self.gc.clear_movement()
             return
 
-        # 模式分流 1: 若勾选了【平台打怪】，直接在当前平台的左右安全边界间来回巡逻
-        if config.get("enable_platform_patrol", False) and self.map_parser is not None:
-            self._execute_platform_patrol(m_pos, player_state, config)
-            return
-
-        # 模式分流 2: 若启用了高级 XML 寻路且已成功载入地图拓扑，走高级 A* 驱动
-        if config.get("enable_advanced_nav", False) and self.pathfinder is not None:
-            self._execute_advanced_patrol(m_pos, player_state, config)
-            return
+        # 核心分流: 若已载入地图 XML，由多层平台导航器统一驱动 (单层安全打怪 / 标记多层循环跃迁)
+        if self.map_parser is not None and getattr(self, "navigator", None) is not None:
+            mx, my = m_pos
+            crop_w = config.get("crop_w", None)
+            crop_h = config.get("crop_h", None)
+            curr_xw, curr_yw = self.map_parser.minimap_to_world(mx, my, crop_w=crop_w, crop_h=crop_h)
+            jump_key = config.get("jump_key", "Alt")
+            turns_per_layer = config.get("turns_per_layer", 1)
+            max_dwell = float(config.get("max_layer_dwell", 25.0))
+            ctx = NavContext(
+                now=now,
+                mx=mx,
+                my=my,
+                xw=curr_xw,
+                yw=curr_yw,
+                jump_key=jump_key,
+                margin_left=self.current_danger_margin_left,
+                margin_right=self.current_danger_margin_right,
+                crop_w=crop_w,
+                crop_h=crop_h,
+                turns_per_layer=turns_per_layer,
+                max_dwell=max_dwell
+            )
+            res = self.navigator.step(ctx)
+            if res == "BUSY":
+                return
+            elif res == "WAIT":
+                self.gc.clear_movement()
+                return
+            elif res == "HUNT":
+                self._execute_platform_patrol(m_pos, player_state, config)
+                return
 
         # 【传统模式】100% 保留现有路点与走廊巡逻逻辑
         mx, my = m_pos
@@ -762,6 +816,8 @@ class DecisionEngine:
             if curr_xw >= target_right:
                 # 抵达右侧安全边界！折返向左
                 self.platform_patrol_dir = "LEFT"
+                if getattr(self, "navigator", None):
+                    self.navigator.on_patrol_turn("R")
                 self.waypoint_spatial_jitter_x = random.randint(0, 8)
                 if random.random() < 0.20:
                     self.micro_idle_end_time = now + random.uniform(0.6, 1.2)
@@ -777,6 +833,8 @@ class DecisionEngine:
             if curr_xw <= target_left:
                 # 抵达左侧安全边界！折返向右
                 self.platform_patrol_dir = "RIGHT"
+                if getattr(self, "navigator", None):
+                    self.navigator.on_patrol_turn("L")
                 self.waypoint_spatial_jitter_x = random.randint(0, 8)
                 if random.random() < 0.20:
                     self.micro_idle_end_time = now + random.uniform(0.6, 1.2)
@@ -1300,6 +1358,8 @@ class DecisionEngine:
         每次攻击前，无论角色当前朝向如何，均点按朝向怪物的方向键以完成转向，确保 100% 朝向怪物出招。
         使用独立后台线程异步执行，防止阻塞主 GUI 定时器循环。
         """
+        if getattr(self, "navigator", None):
+            self.navigator.on_combat()
         if getattr(self, '_is_attack_executing', False):
             return
         threading.Thread(

@@ -1,0 +1,19 @@
+{
+  "marked_platforms": [
+    273
+  ],
+  "drop_points": {
+    "273": 282
+  },
+  "ladder_calibration": {
+    "1": {
+      "mx": 43,
+      "sig": [
+        288,
+        186,
+        -22,
+        16
+      ]
+    }
+  }
+}

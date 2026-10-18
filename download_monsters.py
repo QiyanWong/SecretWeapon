@@ -41,11 +41,13 @@ MOB_MAPPING = {
     'wraith':          {'id': 4230102, 'cn': '大幽灵', 'en': 'Wraith'},
     'jr_boogie':       {'id': 3230300, 'cn': '幼魔精灵', 'en': 'Jr. Boogie'},
     'skeleton_soldier': {'id': 5150001, 'cn': '骷髅士兵', 'en': 'Skeleton Soldier'},
-    'officer_skeleton': {'id': 6230602, 'cn': '骷髅士官', 'en': 'Officer Skeleton'}
+    'officer_skeleton': {'id': 6230602, 'cn': '骷髅士官', 'en': 'Officer Skeleton'},
+    'octopus':          {'id': 1120100, 'cn': '三眼章鱼', 'en': 'Octopus'},
+    'blue_mushroom':    {'id': 2220100, 'cn': '蓝蘑菇', 'en': 'Blue Mushroom'}
 }
 
 # 仅下载存活及战斗相关的动态帧 (排除死亡消散 die 动作，防止模型误将尸体当做存活目标)
-ACTIONS = ['stand', 'move', 'hit1', 'attack1']
+ACTIONS = ['stand', 'move', 'hit1', 'jump', 'attack1']
 OUTPUT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'synthetic_assets', 'monsters')
 os.makedirs(OUTPUT_ROOT, exist_ok=True)
 

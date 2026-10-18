@@ -1,12 +1,15 @@
 import os
 import shutil
 import random
+import datetime
 import yaml
 from ultralytics import YOLO
 
 # 项目基础路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+os.makedirs(MODELS_DIR, exist_ok=True)
 
 # 数据集子目录定义
 RAW_IMAGES_DIR = os.path.join(DATASET_DIR, "raw_images")
@@ -16,7 +19,7 @@ TRAIN_LBL_DIR = os.path.join(DATASET_DIR, "labels", "train")
 VAL_LBL_DIR = os.path.join(DATASET_DIR, "labels", "val")
 YAML_PATH = os.path.join(BASE_DIR, "data.yaml")
 
-# 默认检测目标类别列表 (官方英文名称映射，共 25 类: 2 种玩家朝向 + 23 种怪物)
+# 默认检测目标类别列表 (官方英文名称映射，共 32 类: 2 种玩家朝向 + 30 种怪物)
 CLASS_NAMES = [
     'player_left',
     'player_right',
@@ -47,7 +50,9 @@ CLASS_NAMES = [
     'wraith',
     'jr_boogie',
     'skeleton_soldier',
-    'officer_skeleton'
+    'officer_skeleton',
+    'octopus',
+    'blue_mushroom'
 ]
 
 
@@ -150,15 +155,21 @@ def run_training(epochs=60, imgsz=800, batch=8):
     print("=" * 60)
     print("模型训练完毕！")
     
-    # 动态查找并备份 best.pt 到根目录
+    # 动态查找并备份最优权重
     save_dir = getattr(results, 'save_dir', None)
     best_weights_path = os.path.join(save_dir, 'weights', 'best.pt') if save_dir else os.path.join(BASE_DIR, 'runs', 'detect', 'maple_yolo_run', 'weights', 'best.pt')
     target_weights_path = os.path.join(BASE_DIR, 'best.pt')
 
     if os.path.exists(best_weights_path):
-        shutil.copy(best_weights_path, target_weights_path)
-        print(f"【成功】最优模型权重已更新并复制至项目根目录: {target_weights_path}")
-        print("现在你可以启动 yolo_detector.py 开始实时识别游戏中的目标！")
+        # 1. 每次训练生成独一无二的版本化模型，保存至 models/ 目录
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        versioned_filename = f"best_{timestamp}.pt"
+        versioned_path = os.path.join(MODELS_DIR, versioned_filename)
+        shutil.copy(best_weights_path, versioned_path)
+
+        print(f"【成功】新训练的模型已版本化保存至: {versioned_path}")
+        print(f"【安全保障】根目录原有的 best.pt 保持不变，未被覆盖！")
+        print("现在你可以启动 yolo_detector.py，软件已在下拉列表中默认选用最新训练的模型，并随时可以切换回原有的 best.pt。")
     else:
         print(f"警告: 未找到最优权重文件: {best_weights_path}")
 

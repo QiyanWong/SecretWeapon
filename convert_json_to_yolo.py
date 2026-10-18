@@ -78,7 +78,12 @@ LABEL_MAPPING = {
     'skeleton_soldier': 'skeleton_soldier',
     '骷髅士官': 'officer_skeleton',
     '骷髅官': 'officer_skeleton',
-    'officer_skeleton': 'officer_skeleton'
+    'officer_skeleton': 'officer_skeleton',
+    '三眼章鱼': 'octopus',
+    '章鱼': 'octopus',
+    'octopus': 'octopus',
+    '蓝蘑菇': 'blue_mushroom',
+    'blue_mushroom': 'blue_mushroom'
 }
 
 # 保持固定的类别顺序 (30 类: 2 种玩家朝向 + 28 种怪物)
@@ -112,7 +117,9 @@ CLASS_LIST = [
     'wraith',
     'jr_boogie',
     'skeleton_soldier',
-    'officer_skeleton'
+    'officer_skeleton',
+    'octopus',
+    'blue_mushroom'
 ]
 
 CLASS_TO_ID = {name: idx for idx, name in enumerate(CLASS_LIST)}

@@ -1,0 +1,2252 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<dir name="103010001.img">
+  <dir name="info">
+    <int32 name="version" value="10" />
+    <int32 name="cloud" value="0" />
+    <int32 name="town" value="0" />
+    <int32 name="returnMap" value="103000000" />
+    <single name="mobRate" value="2" />
+    <string name="bgm" value="Bgm01/BadGuys" />
+    <int32 name="forcedReturn" value="999999999" />
+    <string name="mapMark" value="KerningCity" />
+    <int32 name="swim" value="0" />
+    <int32 name="hideMinimap" value="0" />
+    <int32 name="fieldLimit" value="0" />
+    <string name="onUserEnter" value="explorationPoint" />
+  </dir>
+  <dir name="back">
+    <dir name="0">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="0" />
+      <int32 name="x" value="0" />
+      <int32 name="y" value="0" />
+      <int32 name="rx" value="0" />
+      <int32 name="ry" value="0" />
+      <int32 name="type" value="3" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="1">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="2" />
+      <int32 name="x" value="-22" />
+      <int32 name="y" value="-55" />
+      <int32 name="rx" value="-3" />
+      <int32 name="ry" value="-2" />
+      <int32 name="type" value="4" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="2">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="3" />
+      <int32 name="x" value="-55" />
+      <int32 name="y" value="-109" />
+      <int32 name="rx" value="-4" />
+      <int32 name="ry" value="-4" />
+      <int32 name="type" value="4" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="3">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="4" />
+      <int32 name="x" value="-24" />
+      <int32 name="y" value="-173" />
+      <int32 name="rx" value="-5" />
+      <int32 name="ry" value="-6" />
+      <int32 name="type" value="4" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="4">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="5" />
+      <int32 name="x" value="-93" />
+      <int32 name="y" value="-219" />
+      <int32 name="rx" value="-6" />
+      <int32 name="ry" value="-8" />
+      <int32 name="type" value="4" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="6">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="8" />
+      <int32 name="x" value="306" />
+      <int32 name="y" value="307" />
+      <int32 name="rx" value="-27" />
+      <int32 name="ry" value="-37" />
+      <int32 name="type" value="0" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="9">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="10" />
+      <int32 name="x" value="-278" />
+      <int32 name="y" value="621" />
+      <int32 name="rx" value="-40" />
+      <int32 name="ry" value="-60" />
+      <int32 name="type" value="0" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="11">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="7" />
+      <int32 name="x" value="243" />
+      <int32 name="y" value="783" />
+      <int32 name="rx" value="-42" />
+      <int32 name="ry" value="-60" />
+      <int32 name="type" value="0" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="7">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="12" />
+      <int32 name="x" value="-453" />
+      <int32 name="y" value="600" />
+      <int32 name="rx" value="-30" />
+      <int32 name="ry" value="-55" />
+      <int32 name="type" value="0" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="8">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="8" />
+      <int32 name="x" value="-1016" />
+      <int32 name="y" value="313" />
+      <int32 name="rx" value="-35" />
+      <int32 name="ry" value="-40" />
+      <int32 name="type" value="0" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="10">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="11" />
+      <int32 name="x" value="-11" />
+      <int32 name="y" value="621" />
+      <int32 name="rx" value="-40" />
+      <int32 name="ry" value="-60" />
+      <int32 name="type" value="0" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+    <dir name="5">
+      <string name="bS" value="metroCity" />
+      <int32 name="no" value="1" />
+      <int32 name="x" value="172" />
+      <int32 name="y" value="240" />
+      <int32 name="rx" value="-20" />
+      <int32 name="ry" value="-5" />
+      <int32 name="type" value="1" />
+      <int32 name="cx" value="0" />
+      <int32 name="cy" value="0" />
+      <int32 name="a" value="255" />
+      <int32 name="front" value="0" />
+      <int32 name="ani" value="0" />
+      <int32 name="f" value="0" />
+    </dir>
+  </dir>
+  <dir name="life">
+    <dir name="7">
+      <string name="type" value="m" />
+      <string name="id" value="1120100" />
+      <int32 name="x" value="-1124" />
+      <int32 name="y" value="210" />
+      <int32 name="mobTime" value="0" />
+      <int32 name="f" value="0" />
+      <int32 name="hide" value="0" />
+      <int32 name="fh" value="79" />
+      <int32 name="cy" value="231" />
+      <int32 name="rx0" value="-1687" />
+      <int32 name="rx1" value="-789" />
+    </dir>
+    <dir name="6">
+      <string name="type" value="m" />
+      <string name="id" value="1120100" />
+      <int32 name="x" value="-1394" />
+      <int32 name="y" value="210" />
+      <int32 name="mobTime" value="0" />
+      <int32 name="f" value="0" />
+      <int32 name="hide" value="0" />
+      <int32 name="fh" value="80" />
+      <int32 name="cy" value="231" />
+      <int32 name="rx0" value="-1687" />
+      <int32 name="rx1" value="-789" />
+    </dir>
+    <dir name="5">
+      <string name="type" value="m" />
+      <string name="id" value="1120100" />
+      <int32 name="x" value="-1665" />
+      <int32 name="y" value="210" />
+      <int32 name="mobTime" value="0" />
+      <int32 name="f" value="0" />
+      <int32 name="hide" value="0" />
+      <int32 name="fh" value="80" />
+      <int32 name="cy" value="231" />
+      <int32 name="rx0" value="-1687" />
+      <int32 name="rx1" value="-789" />
+    </dir>
+    <dir name="4">
+      <string name="type" value="m" />
+      <string name="id" value="1120100" />
+      <int32 name="x" value="-1123" />
+      <int32 name="y" value="451" />
+      <int32 name="mobTime" value="0" />
+      <int32 name="f" value="0" />
+      <int32 name="hide" value="0" />
+      <int32 name="fh" value="55" />
+      <int32 name="cy" value="497" />
+      <int32 name="rx0" value="-1560" />
+      <int32 name="rx1" value="-789" />
+    </dir>
+    <dir name="3">
+      <string name="type" value="m" />
+      <string name="id" value="1120100" />
+      <int32 name="x" value="-1394" />
+      <int32 name="y" value="451" />
+      <int32 name="mobTime" value="0" />
+      <int32 name="f" value="0" />
+      <int32 name="hide" value="0" />
+      <int32 name="fh" value="56" />
+      <int32 name="cy" value="497" />
+      <int32 name="rx0" value="-1560" />
+      <int32 name="rx1" value="-789" />
+    </dir>
+    <dir name="2">
+      <string name="type" value="m" />
+      <string name="id" value="1120100" />
+      <int32 name="x" value="-1664" />
+      <int32 name="y" value="449" />
+      <int32 name="mobTime" value="0" />
+      <int32 name="f" value="0" />
+      <int32 name="hide" value="0" />
+      <int32 name="fh" value="63" />
+      <int32 name="cy" value="497" />
+      <int32 name="rx0" value="-1942" />
+      <int32 name="rx1" value="-1600" />
+    </dir>
+    <dir name="0">
+      <string name="type" value="m" />
+      <string name="id" value="1120100" />
+      <int32 name="x" value="-855" />
+      <int32 name="y" value="451" />
+      <int32 name="mobTime" value="0" />
+      <int32 name="f" value="0" />
+      <int32 name="hide" value="0" />
+      <int32 name="fh" value="54" />
+      <int32 name="cy" value="497" />
+      <int32 name="rx0" value="-1560" />
+      <int32 name="rx1" value="-789" />
+    </dir>
+    <dir name="1">
+      <string name="type" value="m" />
+      <string name="id" value="1120100" />
+      <int32 name="x" value="-854" />
+      <int32 name="y" value="210" />
+      <int32 name="mobTime" value="0" />
+      <int32 name="f" value="0" />
+      <int32 name="hide" value="0" />
+      <int32 name="fh" value="77" />
+      <int32 name="cy" value="231" />
+      <int32 name="rx0" value="-1687" />
+      <int32 name="rx1" value="-789" />
+    </dir>
+    <dir name="8">
+      <string name="type" value="m" />
+      <string name="id" value="1210103" />
+      <int32 name="x" value="-1258" />
+      <int32 name="y" value="165" />
+      <int32 name="mobTime" value="0" />
+      <int32 name="f" value="0" />
+      <int32 name="hide" value="0" />
+      <int32 name="fh" value="85" />
+      <int32 name="cy" value="171" />
+      <int32 name="rx0" value="-1687" />
+      <int32 name="rx1" value="-789" />
+    </dir>
+    <dir name="9">
+      <string name="type" value="m" />
+      <string name="id" value="1210103" />
+      <int32 name="x" value="-1497" />
+      <int32 name="y" value="446" />
+      <int32 name="mobTime" value="0" />
+      <int32 name="f" value="0" />
+      <int32 name="hide" value="0" />
+      <int32 name="fh" value="56" />
+      <int32 name="cy" value="497" />
+      <int32 name="rx0" value="-1560" />
+      <int32 name="rx1" value="-789" />
+    </dir>
+  </dir>
+  <dir name="0">
+    <dir name="info" />
+    <dir name="tile" />
+    <dir name="obj" />
+  </dir>
+  <dir name="1">
+    <dir name="info" />
+    <dir name="tile" />
+    <dir name="obj">
+      <dir name="0">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="4" />
+        <int32 name="x" value="-1247" />
+        <int32 name="y" value="113" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="15" />
+      </dir>
+      <dir name="1">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="4" />
+        <int32 name="x" value="-1500" />
+        <int32 name="y" value="380" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="7" />
+      </dir>
+      <dir name="2">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="4" />
+        <int32 name="x" value="-1247" />
+        <int32 name="y" value="379" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="7" />
+      </dir>
+      <dir name="3">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="4" />
+        <int32 name="x" value="-990" />
+        <int32 name="y" value="378" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="7" />
+      </dir>
+      <dir name="4">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="4" />
+        <int32 name="x" value="-1757" />
+        <int32 name="y" value="646" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="1" />
+      </dir>
+      <dir name="5">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="4" />
+        <int32 name="x" value="-1503" />
+        <int32 name="y" value="644" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="1" />
+      </dir>
+      <dir name="6">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="4" />
+        <int32 name="x" value="-1247" />
+        <int32 name="y" value="644" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="1" />
+      </dir>
+      <dir name="7">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="4" />
+        <int32 name="x" value="-994" />
+        <int32 name="y" value="644" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="1" />
+      </dir>
+    </dir>
+  </dir>
+  <dir name="2">
+    <dir name="info" />
+    <dir name="tile" />
+    <dir name="obj">
+      <dir name="7">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="1" />
+        <int32 name="x" value="-1444" />
+        <int32 name="y" value="644" />
+        <int32 name="z" value="1" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="2" />
+      </dir>
+      <dir name="8">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="2" />
+        <int32 name="x" value="-919" />
+        <int32 name="y" value="644" />
+        <int32 name="z" value="1" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="3" />
+      </dir>
+      <dir name="9">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="0" />
+        <int32 name="x" value="-1244" />
+        <int32 name="y" value="378" />
+        <int32 name="z" value="1" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="12" />
+      </dir>
+      <dir name="0">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="2" />
+        <int32 name="x" value="-919" />
+        <int32 name="y" value="378" />
+        <int32 name="z" value="3" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="11" />
+      </dir>
+      <dir name="12">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="1" />
+        <int32 name="x" value="-1189" />
+        <int32 name="y" value="644" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="2" />
+      </dir>
+      <dir name="14">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="1" />
+        <int32 name="x" value="-1189" />
+        <int32 name="y" value="378" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="11" />
+      </dir>
+      <dir name="13">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="0" />
+        <int32 name="x" value="-989" />
+        <int32 name="y" value="112" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="16" />
+      </dir>
+      <dir name="1">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="3" />
+        <int32 name="x" value="-1415" />
+        <int32 name="y" value="90" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="17" />
+      </dir>
+      <dir name="3">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="3" />
+        <int32 name="x" value="-1670" />
+        <int32 name="y" value="356" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="10" />
+      </dir>
+      <dir name="6">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="2" />
+        <int32 name="x" value="-919" />
+        <int32 name="y" value="112" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="16" />
+      </dir>
+      <dir name="15">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="0" />
+        <int32 name="x" value="-1499" />
+        <int32 name="y" value="644" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="2" />
+      </dir>
+      <dir name="16">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="3" />
+        <int32 name="x" value="-1925" />
+        <int32 name="y" value="622" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="4" />
+      </dir>
+      <dir name="17">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="7" />
+        <int32 name="x" value="-914" />
+        <int32 name="y" value="-21" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="18" />
+      </dir>
+      <dir name="18">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="6" />
+        <int32 name="x" value="-951" />
+        <int32 name="y" value="-21" />
+        <int32 name="z" value="8" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="18" />
+      </dir>
+      <dir name="19">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="5" />
+        <int32 name="x" value="-1260" />
+        <int32 name="y" value="-21" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="18" />
+      </dir>
+      <dir name="20">
+        <string name="oS" value="connect" />
+        <string name="l0" value="rope" />
+        <string name="l1" value="1" />
+        <string name="l2" value="0" />
+        <int32 name="x" value="-1363" />
+        <int32 name="y" value="53" />
+        <int32 name="z" value="10" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="17" />
+      </dir>
+      <dir name="2">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="17" />
+        <int32 name="x" value="-880" />
+        <int32 name="y" value="-65" />
+        <int32 name="z" value="5" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="18" />
+      </dir>
+      <dir name="11">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="11" />
+        <int32 name="x" value="-1224" />
+        <int32 name="y" value="486" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="9" />
+      </dir>
+      <dir name="10">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="12" />
+        <int32 name="x" value="-1272" />
+        <int32 name="y" value="482" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="9" />
+      </dir>
+      <dir name="5">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="10" />
+        <int32 name="x" value="-1142" />
+        <int32 name="y" value="472" />
+        <int32 name="z" value="10" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="8" />
+      </dir>
+      <dir name="4">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="8" />
+        <int32 name="x" value="-1064" />
+        <int32 name="y" value="161" />
+        <int32 name="z" value="10" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="16" />
+      </dir>
+    </dir>
+  </dir>
+  <dir name="3">
+    <dir name="info" />
+    <dir name="tile" />
+    <dir name="obj">
+      <dir name="0">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="7" />
+        <int32 name="x" value="-913" />
+        <int32 name="y" value="245" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="14" />
+      </dir>
+      <dir name="1">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="6" />
+        <int32 name="x" value="-952" />
+        <int32 name="y" value="245" />
+        <int32 name="z" value="8" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="14" />
+      </dir>
+      <dir name="2">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="6" />
+        <int32 name="x" value="-1199" />
+        <int32 name="y" value="245" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="14" />
+      </dir>
+      <dir name="3">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="5" />
+        <int32 name="x" value="-1514" />
+        <int32 name="y" value="245" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="14" />
+      </dir>
+      <dir name="4">
+        <string name="oS" value="connect" />
+        <string name="l0" value="rope" />
+        <string name="l1" value="1" />
+        <string name="l2" value="0" />
+        <int32 name="x" value="-1618" />
+        <int32 name="y" value="320" />
+        <int32 name="z" value="10" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="14" />
+      </dir>
+      <dir name="5">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="17" />
+        <int32 name="x" value="-1307" />
+        <int32 name="y" value="201" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="14" />
+      </dir>
+      <dir name="6">
+        <string name="oS" value="connect" />
+        <string name="l0" value="rope" />
+        <string name="l1" value="1" />
+        <string name="l2" value="0" />
+        <int32 name="x" value="-934" />
+        <int32 name="y" value="318" />
+        <int32 name="z" value="10" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="14" />
+      </dir>
+    </dir>
+  </dir>
+  <dir name="4">
+    <dir name="info">
+      <string name="tS" value="holeBrick" />
+      <int32 name="tSMag" value="1" />
+    </dir>
+    <dir name="tile">
+      <dir name="6">
+        <int32 name="x" value="-1755" />
+        <int32 name="y" value="690" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="3">
+        <int32 name="x" value="-1845" />
+        <int32 name="y" value="690" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="1">
+        <int32 name="x" value="-1935" />
+        <int32 name="y" value="690" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="10">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="690" />
+        <string name="u" value="edU" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="14">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="690" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="8">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="690" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="11">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="690" />
+        <string name="u" value="enV0" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="2">
+        <int32 name="x" value="-1845" />
+        <int32 name="y" value="690" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="0">
+        <int32 name="x" value="-1935" />
+        <int32 name="y" value="690" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="4">
+        <int32 name="x" value="-1665" />
+        <int32 name="y" value="690" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="5">
+        <int32 name="x" value="-1665" />
+        <int32 name="y" value="690" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="7">
+        <int32 name="x" value="-1755" />
+        <int32 name="y" value="690" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="20">
+        <int32 name="x" value="-1575" />
+        <int32 name="y" value="690" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="9">
+        <int32 name="x" value="-1575" />
+        <int32 name="y" value="690" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="26">
+        <int32 name="x" value="-1575" />
+        <int32 name="y" value="750" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="4" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="31">
+        <int32 name="x" value="-1395" />
+        <int32 name="y" value="750" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="29">
+        <int32 name="x" value="-1305" />
+        <int32 name="y" value="750" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="30">
+        <int32 name="x" value="-1395" />
+        <int32 name="y" value="750" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="28">
+        <int32 name="x" value="-1305" />
+        <int32 name="y" value="750" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="39">
+        <int32 name="x" value="-945" />
+        <int32 name="y" value="810" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="41">
+        <int32 name="x" value="-1215" />
+        <int32 name="y" value="750" />
+        <string name="u" value="edU" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="42">
+        <int32 name="x" value="-1215" />
+        <int32 name="y" value="750" />
+        <string name="u" value="enV1" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="44">
+        <int32 name="x" value="-1215" />
+        <int32 name="y" value="810" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="45">
+        <int32 name="x" value="-1125" />
+        <int32 name="y" value="810" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="46">
+        <int32 name="x" value="-1035" />
+        <int32 name="y" value="810" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="47">
+        <int32 name="x" value="-765" />
+        <int32 name="y" value="810" />
+        <string name="u" value="edU" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="40">
+        <int32 name="x" value="-855" />
+        <int32 name="y" value="810" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="52">
+        <int32 name="x" value="-765" />
+        <int32 name="y" value="930" />
+        <string name="u" value="edD" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="50">
+        <int32 name="x" value="-765" />
+        <int32 name="y" value="870" />
+        <string name="u" value="enV1" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="48">
+        <int32 name="x" value="-765" />
+        <int32 name="y" value="810" />
+        <string name="u" value="enV1" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="62">
+        <int32 name="x" value="-1125" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="57">
+        <int32 name="x" value="-1035" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="55">
+        <int32 name="x" value="-945" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="53">
+        <int32 name="x" value="-855" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="38">
+        <int32 name="x" value="-945" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="37">
+        <int32 name="x" value="-855" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="51">
+        <int32 name="x" value="-855" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="54">
+        <int32 name="x" value="-945" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="56">
+        <int32 name="x" value="-1035" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="4" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="59">
+        <int32 name="x" value="-1305" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="67">
+        <int32 name="x" value="-1395" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="27">
+        <int32 name="x" value="-1395" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="4" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="43">
+        <int32 name="x" value="-1215" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="35">
+        <int32 name="x" value="-1125" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="65">
+        <int32 name="x" value="-1215" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="36">
+        <int32 name="x" value="-1035" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="63">
+        <int32 name="x" value="-1125" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="34">
+        <int32 name="x" value="-1305" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="49">
+        <int32 name="x" value="-1305" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="58">
+        <int32 name="x" value="-1215" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="60">
+        <int32 name="x" value="-1395" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="75">
+        <int32 name="x" value="-1755" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="61">
+        <int32 name="x" value="-1485" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="70">
+        <int32 name="x" value="-1665" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="69">
+        <int32 name="x" value="-1575" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="72">
+        <int32 name="x" value="-1845" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="77">
+        <int32 name="x" value="-1935" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="79">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="930" />
+        <string name="u" value="enH1" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="12">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="750" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="15">
+        <int32 name="x" value="-1935" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="4" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="80">
+        <int32 name="x" value="-1935" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="13">
+        <int32 name="x" value="-1935" />
+        <int32 name="y" value="750" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="78">
+        <int32 name="x" value="-1845" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="4" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="16">
+        <int32 name="x" value="-1845" />
+        <int32 name="y" value="750" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="73">
+        <int32 name="x" value="-1755" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="4" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="18">
+        <int32 name="x" value="-1755" />
+        <int32 name="y" value="750" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="19">
+        <int32 name="x" value="-1665" />
+        <int32 name="y" value="750" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="74">
+        <int32 name="x" value="-1665" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="22">
+        <int32 name="x" value="-1665" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="71">
+        <int32 name="x" value="-1575" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="25">
+        <int32 name="x" value="-1575" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="4" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="17">
+        <int32 name="x" value="-1485" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="21">
+        <int32 name="x" value="-1755" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="66">
+        <int32 name="x" value="-1845" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="68">
+        <int32 name="x" value="-1485" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="3" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="64">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="810" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="1" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="76">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="750" />
+        <string name="u" value="enV0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="24">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="870" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="4" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="23">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="810" />
+        <string name="u" value="enV0" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="33">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="930" />
+        <string name="u" value="edD" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="32">
+        <int32 name="x" value="-2025" />
+        <int32 name="y" value="870" />
+        <string name="u" value="enV0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="81">
+        <int32 name="x" value="-1485" />
+        <int32 name="y" value="690" />
+        <string name="u" value="edU" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="82">
+        <int32 name="x" value="-1485" />
+        <int32 name="y" value="690" />
+        <string name="u" value="enV1" />
+        <int32 name="no" value="2" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="83">
+        <int32 name="x" value="-1485" />
+        <int32 name="y" value="750" />
+        <string name="u" value="bsc" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="84">
+        <int32 name="x" value="-1485" />
+        <int32 name="y" value="750" />
+        <string name="u" value="enH0" />
+        <int32 name="no" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+    </dir>
+    <dir name="obj">
+      <dir name="0">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="7" />
+        <int32 name="x" value="-913" />
+        <int32 name="y" value="511" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="5" />
+      </dir>
+      <dir name="1">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="6" />
+        <int32 name="x" value="-1178" />
+        <int32 name="y" value="511" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="5" />
+      </dir>
+      <dir name="2">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="6" />
+        <int32 name="x" value="-1432" />
+        <int32 name="y" value="511" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="5" />
+      </dir>
+      <dir name="3">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="5" />
+        <int32 name="x" value="-1769" />
+        <int32 name="y" value="511" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="6" />
+      </dir>
+      <dir name="4">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="minidungeon" />
+        <string name="l2" value="6" />
+        <int32 name="x" value="-1459" />
+        <int32 name="y" value="511" />
+        <int32 name="z" value="8" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="5" />
+      </dir>
+      <dir name="5">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="17" />
+        <int32 name="x" value="-1689" />
+        <int32 name="y" value="466" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="13" />
+      </dir>
+      <dir name="6">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="17" />
+        <int32 name="x" value="-961" />
+        <int32 name="y" value="467" />
+        <int32 name="z" value="2" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="5" />
+      </dir>
+      <dir name="7">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="3" />
+        <int32 name="x" value="-897" />
+        <int32 name="y" value="756" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="8">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="6" />
+        <int32 name="x" value="-1109" />
+        <int32 name="y" value="756" />
+        <int32 name="z" value="9" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="9">
+        <string name="oS" value="acc2" />
+        <string name="l0" value="metroCity" />
+        <string name="l1" value="artificiality" />
+        <string name="l2" value="12" />
+        <int32 name="x" value="-1180" />
+        <int32 name="y" value="771" />
+        <int32 name="z" value="12" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="0" />
+      </dir>
+      <dir name="10">
+        <string name="oS" value="connect" />
+        <string name="l0" value="rope" />
+        <string name="l1" value="1" />
+        <string name="l2" value="0" />
+        <int32 name="x" value="-1209" />
+        <int32 name="y" value="585" />
+        <int32 name="z" value="14" />
+        <int32 name="f" value="0" />
+        <int32 name="zM" value="5" />
+      </dir>
+    </dir>
+  </dir>
+  <dir name="5">
+    <dir name="info" />
+    <dir name="tile" />
+    <dir name="obj" />
+  </dir>
+  <dir name="6">
+    <dir name="info" />
+    <dir name="tile" />
+    <dir name="obj" />
+  </dir>
+  <dir name="7">
+    <dir name="info" />
+    <dir name="tile" />
+    <dir name="obj" />
+  </dir>
+  <dir name="reactor" />
+  <dir name="foothold">
+    <dir name="4">
+      <dir name="0">
+        <dir name="1">
+          <int32 name="x1" value="-1935" />
+          <int32 name="y1" value="666" />
+          <int32 name="x2" value="-1845" />
+          <int32 name="y2" value="666" />
+          <int32 name="prev" value="9" />
+          <int32 name="next" value="2" />
+        </dir>
+        <dir name="2">
+          <int32 name="x1" value="-1845" />
+          <int32 name="y1" value="666" />
+          <int32 name="x2" value="-1755" />
+          <int32 name="y2" value="666" />
+          <int32 name="prev" value="1" />
+          <int32 name="next" value="4" />
+        </dir>
+        <dir name="3">
+          <int32 name="x1" value="-1665" />
+          <int32 name="y1" value="666" />
+          <int32 name="x2" value="-1575" />
+          <int32 name="y2" value="666" />
+          <int32 name="prev" value="4" />
+          <int32 name="next" value="5" />
+        </dir>
+        <dir name="4">
+          <int32 name="x1" value="-1755" />
+          <int32 name="y1" value="666" />
+          <int32 name="x2" value="-1665" />
+          <int32 name="y2" value="666" />
+          <int32 name="prev" value="2" />
+          <int32 name="next" value="3" />
+        </dir>
+        <dir name="5">
+          <int32 name="x1" value="-1575" />
+          <int32 name="y1" value="666" />
+          <int32 name="x2" value="-1520" />
+          <int32 name="y2" value="666" />
+          <int32 name="prev" value="3" />
+          <int32 name="next" value="29" />
+        </dir>
+        <dir name="6">
+          <int32 name="x1" value="-2060" />
+          <int32 name="y1" value="691" />
+          <int32 name="x2" value="-2060" />
+          <int32 name="y2" value="666" />
+          <int32 name="prev" value="8" />
+          <int32 name="next" value="7" />
+        </dir>
+        <dir name="7">
+          <int32 name="x1" value="-2060" />
+          <int32 name="y1" value="666" />
+          <int32 name="x2" value="-1990" />
+          <int32 name="y2" value="666" />
+          <int32 name="prev" value="6" />
+          <int32 name="next" value="9" />
+        </dir>
+        <dir name="8">
+          <int32 name="x1" value="-2060" />
+          <int32 name="y1" value="750" />
+          <int32 name="x2" value="-2060" />
+          <int32 name="y2" value="691" />
+          <int32 name="prev" value="28" />
+          <int32 name="next" value="6" />
+        </dir>
+        <dir name="9">
+          <int32 name="x1" value="-1990" />
+          <int32 name="y1" value="666" />
+          <int32 name="x2" value="-1935" />
+          <int32 name="y2" value="666" />
+          <int32 name="prev" value="7" />
+          <int32 name="next" value="1" />
+        </dir>
+        <dir name="10">
+          <int32 name="x1" value="-2060" />
+          <int32 name="y1" value="870" />
+          <int32 name="x2" value="-2060" />
+          <int32 name="y2" value="810" />
+          <int32 name="prev" value="13" />
+          <int32 name="next" value="28" />
+        </dir>
+        <dir name="11">
+          <int32 name="x1" value="-1305" />
+          <int32 name="y1" value="726" />
+          <int32 name="x2" value="-1250" />
+          <int32 name="y2" value="726" />
+          <int32 name="prev" value="12" />
+          <int32 name="next" value="16" />
+        </dir>
+        <dir name="12">
+          <int32 name="x1" value="-1395" />
+          <int32 name="y1" value="726" />
+          <int32 name="x2" value="-1305" />
+          <int32 name="y2" value="726" />
+          <int32 name="prev" value="33" />
+          <int32 name="next" value="11" />
+        </dir>
+        <dir name="13">
+          <int32 name="x1" value="-2060" />
+          <int32 name="y1" value="930" />
+          <int32 name="x2" value="-2060" />
+          <int32 name="y2" value="870" />
+          <int32 name="prev" value="0" />
+          <int32 name="next" value="10" />
+        </dir>
+        <dir name="14">
+          <int32 name="x1" value="-945" />
+          <int32 name="y1" value="786" />
+          <int32 name="x2" value="-855" />
+          <int32 name="y2" value="786" />
+          <int32 name="prev" value="22" />
+          <int32 name="next" value="15" />
+        </dir>
+        <dir name="15">
+          <int32 name="x1" value="-855" />
+          <int32 name="y1" value="786" />
+          <int32 name="x2" value="-800" />
+          <int32 name="y2" value="786" />
+          <int32 name="prev" value="14" />
+          <int32 name="next" value="23" />
+        </dir>
+        <dir name="16">
+          <int32 name="x1" value="-1250" />
+          <int32 name="y1" value="726" />
+          <int32 name="x2" value="-1215" />
+          <int32 name="y2" value="726" />
+          <int32 name="prev" value="11" />
+          <int32 name="next" value="17" />
+        </dir>
+        <dir name="17">
+          <int32 name="x1" value="-1215" />
+          <int32 name="y1" value="726" />
+          <int32 name="x2" value="-1180" />
+          <int32 name="y2" value="726" />
+          <int32 name="prev" value="16" />
+          <int32 name="next" value="18" />
+        </dir>
+        <dir name="18">
+          <int32 name="x1" value="-1180" />
+          <int32 name="y1" value="726" />
+          <int32 name="x2" value="-1180" />
+          <int32 name="y2" value="748" />
+          <int32 name="prev" value="17" />
+          <int32 name="next" value="42" />
+        </dir>
+        <dir name="19">
+          <int32 name="x1" value="-1180" />
+          <int32 name="y1" value="751" />
+          <int32 name="x2" value="-1180" />
+          <int32 name="y2" value="786" />
+          <int32 name="prev" value="41" />
+          <int32 name="next" value="20" />
+        </dir>
+        <dir name="20">
+          <int32 name="x1" value="-1180" />
+          <int32 name="y1" value="786" />
+          <int32 name="x2" value="-1125" />
+          <int32 name="y2" value="786" />
+          <int32 name="prev" value="19" />
+          <int32 name="next" value="21" />
+        </dir>
+        <dir name="21">
+          <int32 name="x1" value="-1125" />
+          <int32 name="y1" value="786" />
+          <int32 name="x2" value="-1035" />
+          <int32 name="y2" value="786" />
+          <int32 name="prev" value="20" />
+          <int32 name="next" value="22" />
+        </dir>
+        <dir name="22">
+          <int32 name="x1" value="-1035" />
+          <int32 name="y1" value="786" />
+          <int32 name="x2" value="-945" />
+          <int32 name="y2" value="786" />
+          <int32 name="prev" value="21" />
+          <int32 name="next" value="14" />
+        </dir>
+        <dir name="23">
+          <int32 name="x1" value="-800" />
+          <int32 name="y1" value="786" />
+          <int32 name="x2" value="-765" />
+          <int32 name="y2" value="786" />
+          <int32 name="prev" value="15" />
+          <int32 name="next" value="24" />
+        </dir>
+        <dir name="24">
+          <int32 name="x1" value="-765" />
+          <int32 name="y1" value="786" />
+          <int32 name="x2" value="-730" />
+          <int32 name="y2" value="786" />
+          <int32 name="prev" value="23" />
+          <int32 name="next" value="25" />
+        </dir>
+        <dir name="25">
+          <int32 name="x1" value="-730" />
+          <int32 name="y1" value="786" />
+          <int32 name="x2" value="-730" />
+          <int32 name="y2" value="811" />
+          <int32 name="prev" value="24" />
+          <int32 name="next" value="26" />
+        </dir>
+        <dir name="26">
+          <int32 name="x1" value="-730" />
+          <int32 name="y1" value="811" />
+          <int32 name="x2" value="-730" />
+          <int32 name="y2" value="870" />
+          <int32 name="prev" value="25" />
+          <int32 name="next" value="27" />
+        </dir>
+        <dir name="27">
+          <int32 name="x1" value="-730" />
+          <int32 name="y1" value="870" />
+          <int32 name="x2" value="-730" />
+          <int32 name="y2" value="930" />
+          <int32 name="prev" value="26" />
+          <int32 name="next" value="0" />
+        </dir>
+        <dir name="28">
+          <int32 name="x1" value="-2060" />
+          <int32 name="y1" value="810" />
+          <int32 name="x2" value="-2060" />
+          <int32 name="y2" value="750" />
+          <int32 name="prev" value="10" />
+          <int32 name="next" value="8" />
+        </dir>
+        <dir name="29">
+          <int32 name="x1" value="-1520" />
+          <int32 name="y1" value="666" />
+          <int32 name="x2" value="-1485" />
+          <int32 name="y2" value="666" />
+          <int32 name="prev" value="5" />
+          <int32 name="next" value="30" />
+        </dir>
+        <dir name="30">
+          <int32 name="x1" value="-1485" />
+          <int32 name="y1" value="666" />
+          <int32 name="x2" value="-1450" />
+          <int32 name="y2" value="666" />
+          <int32 name="prev" value="29" />
+          <int32 name="next" value="31" />
+        </dir>
+        <dir name="31">
+          <int32 name="x1" value="-1450" />
+          <int32 name="y1" value="666" />
+          <int32 name="x2" value="-1450" />
+          <int32 name="y2" value="691" />
+          <int32 name="prev" value="30" />
+          <int32 name="next" value="32" />
+        </dir>
+        <dir name="32">
+          <int32 name="x1" value="-1450" />
+          <int32 name="y1" value="691" />
+          <int32 name="x2" value="-1450" />
+          <int32 name="y2" value="726" />
+          <int32 name="prev" value="31" />
+          <int32 name="next" value="33" />
+        </dir>
+        <dir name="33">
+          <int32 name="x1" value="-1450" />
+          <int32 name="y1" value="726" />
+          <int32 name="x2" value="-1395" />
+          <int32 name="y2" value="726" />
+          <int32 name="prev" value="32" />
+          <int32 name="next" value="12" />
+        </dir>
+        <dir name="34">
+          <int32 name="x1" value="-1008" />
+          <int32 name="y1" value="740" />
+          <int32 name="x2" value="-993" />
+          <int32 name="y2" value="721" />
+          <int32 name="prev" value="0" />
+          <int32 name="next" value="35" />
+        </dir>
+        <dir name="35">
+          <int32 name="x1" value="-993" />
+          <int32 name="y1" value="721" />
+          <int32 name="x2" value="-968" />
+          <int32 name="y2" value="722" />
+          <int32 name="prev" value="34" />
+          <int32 name="next" value="36" />
+        </dir>
+        <dir name="36">
+          <int32 name="x1" value="-968" />
+          <int32 name="y1" value="722" />
+          <int32 name="x2" value="-962" />
+          <int32 name="y2" value="729" />
+          <int32 name="prev" value="35" />
+          <int32 name="next" value="37" />
+        </dir>
+        <dir name="37">
+          <int32 name="x1" value="-962" />
+          <int32 name="y1" value="729" />
+          <int32 name="x2" value="-835" />
+          <int32 name="y2" value="728" />
+          <int32 name="prev" value="36" />
+          <int32 name="next" value="38" />
+        </dir>
+        <dir name="38">
+          <int32 name="x1" value="-835" />
+          <int32 name="y1" value="728" />
+          <int32 name="x2" value="-826" />
+          <int32 name="y2" value="722" />
+          <int32 name="prev" value="37" />
+          <int32 name="next" value="39" />
+        </dir>
+        <dir name="39">
+          <int32 name="x1" value="-826" />
+          <int32 name="y1" value="722" />
+          <int32 name="x2" value="-800" />
+          <int32 name="y2" value="722" />
+          <int32 name="prev" value="38" />
+          <int32 name="next" value="40" />
+        </dir>
+        <dir name="40">
+          <int32 name="x1" value="-800" />
+          <int32 name="y1" value="722" />
+          <int32 name="x2" value="-785" />
+          <int32 name="y2" value="737" />
+          <int32 name="prev" value="39" />
+          <int32 name="next" value="0" />
+        </dir>
+        <dir name="41">
+          <int32 name="x1" value="-1180" />
+          <int32 name="y1" value="748" />
+          <int32 name="x2" value="-1180" />
+          <int32 name="y2" value="751" />
+          <int32 name="prev" value="18" />
+          <int32 name="next" value="19" />
+        </dir>
+        <dir name="42">
+          <int32 name="x1" value="-1180" />
+          <int32 name="y1" value="748" />
+          <int32 name="x2" value="-1158" />
+          <int32 name="y2" value="737" />
+          <int32 name="prev" value="18" />
+          <int32 name="next" value="43" />
+        </dir>
+        <dir name="43">
+          <int32 name="x1" value="-1158" />
+          <int32 name="y1" value="737" />
+          <int32 name="x2" value="-1154" />
+          <int32 name="y2" value="729" />
+          <int32 name="prev" value="42" />
+          <int32 name="next" value="44" />
+        </dir>
+        <dir name="44">
+          <int32 name="x1" value="-1154" />
+          <int32 name="y1" value="729" />
+          <int32 name="x2" value="-1094" />
+          <int32 name="y2" value="724" />
+          <int32 name="prev" value="43" />
+          <int32 name="next" value="45" />
+        </dir>
+        <dir name="45">
+          <int32 name="x1" value="-1094" />
+          <int32 name="y1" value="724" />
+          <int32 name="x2" value="-1082" />
+          <int32 name="y2" value="732" />
+          <int32 name="prev" value="44" />
+          <int32 name="next" value="0" />
+        </dir>
+        <dir name="46">
+          <int32 name="x1" value="-1129" />
+          <int32 name="y1" value="768" />
+          <int32 name="x2" value="-1121" />
+          <int32 name="y2" value="758" />
+          <int32 name="prev" value="0" />
+          <int32 name="next" value="47" />
+        </dir>
+        <dir name="47">
+          <int32 name="x1" value="-1121" />
+          <int32 name="y1" value="758" />
+          <int32 name="x2" value="-1104" />
+          <int32 name="y2" value="754" />
+          <int32 name="prev" value="46" />
+          <int32 name="next" value="48" />
+        </dir>
+        <dir name="48">
+          <int32 name="x1" value="-1104" />
+          <int32 name="y1" value="754" />
+          <int32 name="x2" value="-1084" />
+          <int32 name="y2" value="746" />
+          <int32 name="prev" value="47" />
+          <int32 name="next" value="49" />
+        </dir>
+        <dir name="49">
+          <int32 name="x1" value="-1084" />
+          <int32 name="y1" value="746" />
+          <int32 name="x2" value="-1063" />
+          <int32 name="y2" value="746" />
+          <int32 name="prev" value="48" />
+          <int32 name="next" value="50" />
+        </dir>
+        <dir name="50">
+          <int32 name="x1" value="-1063" />
+          <int32 name="y1" value="746" />
+          <int32 name="x2" value="-1059" />
+          <int32 name="y2" value="751" />
+          <int32 name="prev" value="49" />
+          <int32 name="next" value="51" />
+        </dir>
+        <dir name="51">
+          <int32 name="x1" value="-1059" />
+          <int32 name="y1" value="751" />
+          <int32 name="x2" value="-1059" />
+          <int32 name="y2" value="759" />
+          <int32 name="prev" value="50" />
+          <int32 name="next" value="52" />
+        </dir>
+        <dir name="52">
+          <int32 name="x1" value="-1059" />
+          <int32 name="y1" value="759" />
+          <int32 name="x2" value="-1043" />
+          <int32 name="y2" value="761" />
+          <int32 name="prev" value="51" />
+          <int32 name="next" value="53" />
+        </dir>
+        <dir name="53">
+          <int32 name="x1" value="-1043" />
+          <int32 name="y1" value="761" />
+          <int32 name="x2" value="-1036" />
+          <int32 name="y2" value="767" />
+          <int32 name="prev" value="52" />
+          <int32 name="next" value="0" />
+        </dir>
+      </dir>
+      <dir name="5">
+        <dir name="54">
+          <int32 name="x1" value="-1054" />
+          <int32 name="y1" value="497" />
+          <int32 name="x2" value="-769" />
+          <int32 name="y2" value="497" />
+          <int32 name="prev" value="55" />
+          <int32 name="next" value="0" />
+        </dir>
+        <dir name="55">
+          <int32 name="x1" value="-1310" />
+          <int32 name="y1" value="497" />
+          <int32 name="x2" value="-1054" />
+          <int32 name="y2" value="497" />
+          <int32 name="prev" value="56" />
+          <int32 name="next" value="54" />
+        </dir>
+        <dir name="56">
+          <int32 name="x1" value="-1564" />
+          <int32 name="y1" value="497" />
+          <int32 name="x2" value="-1310" />
+          <int32 name="y2" value="497" />
+          <int32 name="prev" value="57" />
+          <int32 name="next" value="55" />
+        </dir>
+        <dir name="57">
+          <int32 name="x1" value="-1580" />
+          <int32 name="y1" value="497" />
+          <int32 name="x2" value="-1564" />
+          <int32 name="y2" value="497" />
+          <int32 name="prev" value="63" />
+          <int32 name="next" value="56" />
+        </dir>
+        <dir name="58">
+          <int32 name="x1" value="-1019" />
+          <int32 name="y1" value="437" />
+          <int32 name="x2" value="-1007" />
+          <int32 name="y2" value="437" />
+          <int32 name="prev" value="0" />
+          <int32 name="next" value="59" />
+        </dir>
+        <dir name="59">
+          <int32 name="x1" value="-1007" />
+          <int32 name="y1" value="437" />
+          <int32 name="x2" value="-1006" />
+          <int32 name="y2" value="438" />
+          <int32 name="prev" value="58" />
+          <int32 name="next" value="60" />
+        </dir>
+        <dir name="60">
+          <int32 name="x1" value="-1006" />
+          <int32 name="y1" value="438" />
+          <int32 name="x2" value="-927" />
+          <int32 name="y2" value="438" />
+          <int32 name="prev" value="59" />
+          <int32 name="next" value="61" />
+        </dir>
+        <dir name="61">
+          <int32 name="x1" value="-927" />
+          <int32 name="y1" value="438" />
+          <int32 name="x2" value="-926" />
+          <int32 name="y2" value="437" />
+          <int32 name="prev" value="60" />
+          <int32 name="next" value="62" />
+        </dir>
+        <dir name="62">
+          <int32 name="x1" value="-926" />
+          <int32 name="y1" value="437" />
+          <int32 name="x2" value="-903" />
+          <int32 name="y2" value="437" />
+          <int32 name="prev" value="61" />
+          <int32 name="next" value="0" />
+        </dir>
+      </dir>
+      <dir name="6">
+        <dir name="63">
+          <int32 name="x1" value="-1962" />
+          <int32 name="y1" value="497" />
+          <int32 name="x2" value="-1580" />
+          <int32 name="y2" value="497" />
+          <int32 name="prev" value="0" />
+          <int32 name="next" value="57" />
+        </dir>
+      </dir>
+      <dir name="13">
+        <dir name="64">
+          <int32 name="x1" value="-1747" />
+          <int32 name="y1" value="436" />
+          <int32 name="x2" value="-1735" />
+          <int32 name="y2" value="436" />
+          <int32 name="prev" value="0" />
+          <int32 name="next" value="65" />
+        </dir>
+        <dir name="65">
+          <int32 name="x1" value="-1735" />
+          <int32 name="y1" value="436" />
+          <int32 name="x2" value="-1734" />
+          <int32 name="y2" value="437" />
+          <int32 name="prev" value="64" />
+          <int32 name="next" value="66" />
+        </dir>
+        <dir name="66">
+          <int32 name="x1" value="-1734" />
+          <int32 name="y1" value="437" />
+          <int32 name="x2" value="-1655" />
+          <int32 name="y2" value="437" />
+          <int32 name="prev" value="65" />
+          <int32 name="next" value="67" />
+        </dir>
+        <dir name="67">
+          <int32 name="x1" value="-1655" />
+          <int32 name="y1" value="437" />
+          <int32 name="x2" value="-1654" />
+          <int32 name="y2" value="436" />
+          <int32 name="prev" value="66" />
+          <int32 name="next" value="68" />
+        </dir>
+        <dir name="68">
+          <int32 name="x1" value="-1654" />
+          <int32 name="y1" value="436" />
+          <int32 name="x2" value="-1631" />
+          <int32 name="y2" value="436" />
+          <int32 name="prev" value="67" />
+          <int32 name="next" value="0" />
+        </dir>
+      </dir>
+    </dir>
+    <dir name="2">
+      <dir name="18">
+        <dir name="69">
+          <int32 name="x1" value="-938" />
+          <int32 name="y1" value="-95" />
+          <int32 name="x2" value="-926" />
+          <int32 name="y2" value="-95" />
+          <int32 name="prev" value="0" />
+          <int32 name="next" value="70" />
+        </dir>
+        <dir name="70">
+          <int32 name="x1" value="-926" />
+          <int32 name="y1" value="-95" />
+          <int32 name="x2" value="-925" />
+          <int32 name="y2" value="-94" />
+          <int32 name="prev" value="69" />
+          <int32 name="next" value="71" />
+        </dir>
+        <dir name="71">
+          <int32 name="x1" value="-925" />
+          <int32 name="y1" value="-94" />
+          <int32 name="x2" value="-846" />
+          <int32 name="y2" value="-94" />
+          <int32 name="prev" value="70" />
+          <int32 name="next" value="72" />
+        </dir>
+        <dir name="72">
+          <int32 name="x1" value="-846" />
+          <int32 name="y1" value="-94" />
+          <int32 name="x2" value="-845" />
+          <int32 name="y2" value="-95" />
+          <int32 name="prev" value="71" />
+          <int32 name="next" value="73" />
+        </dir>
+        <dir name="73">
+          <int32 name="x1" value="-845" />
+          <int32 name="y1" value="-95" />
+          <int32 name="x2" value="-822" />
+          <int32 name="y2" value="-95" />
+          <int32 name="prev" value="72" />
+          <int32 name="next" value="0" />
+        </dir>
+        <dir name="74">
+          <int32 name="x1" value="-1055" />
+          <int32 name="y1" value="-35" />
+          <int32 name="x2" value="-770" />
+          <int32 name="y2" value="-35" />
+          <int32 name="prev" value="75" />
+          <int32 name="next" value="0" />
+        </dir>
+        <dir name="75">
+          <int32 name="x1" value="-1083" />
+          <int32 name="y1" value="-35" />
+          <int32 name="x2" value="-1055" />
+          <int32 name="y2" value="-35" />
+          <int32 name="prev" value="76" />
+          <int32 name="next" value="74" />
+        </dir>
+        <dir name="76">
+          <int32 name="x1" value="-1453" />
+          <int32 name="y1" value="-35" />
+          <int32 name="x2" value="-1083" />
+          <int32 name="y2" value="-35" />
+          <int32 name="prev" value="0" />
+          <int32 name="next" value="75" />
+        </dir>
+      </dir>
+    </dir>
+    <dir name="3">
+      <dir name="14">
+        <dir name="77">
+          <int32 name="x1" value="-1054" />
+          <int32 name="y1" value="231" />
+          <int32 name="x2" value="-769" />
+          <int32 name="y2" value="231" />
+          <int32 name="prev" value="78" />
+          <int32 name="next" value="0" />
+        </dir>
+        <dir name="78">
+          <int32 name="x1" value="-1084" />
+          <int32 name="y1" value="231" />
+          <int32 name="x2" value="-1054" />
+          <int32 name="y2" value="231" />
+          <int32 name="prev" value="79" />
+          <int32 name="next" value="77" />
+        </dir>
+        <dir name="79">
+          <int32 name="x1" value="-1331" />
+          <int32 name="y1" value="231" />
+          <int32 name="x2" value="-1084" />
+          <int32 name="y2" value="231" />
+          <int32 name="prev" value="80" />
+          <int32 name="next" value="78" />
+        </dir>
+        <dir name="80">
+          <int32 name="x1" value="-1707" />
+          <int32 name="y1" value="231" />
+          <int32 name="x2" value="-1331" />
+          <int32 name="y2" value="231" />
+          <int32 name="prev" value="0" />
+          <int32 name="next" value="79" />
+        </dir>
+        <dir name="81">
+          <int32 name="x1" value="-1365" />
+          <int32 name="y1" value="171" />
+          <int32 name="x2" value="-1353" />
+          <int32 name="y2" value="171" />
+          <int32 name="prev" value="0" />
+          <int32 name="next" value="82" />
+        </dir>
+        <dir name="82">
+          <int32 name="x1" value="-1353" />
+          <int32 name="y1" value="171" />
+          <int32 name="x2" value="-1352" />
+          <int32 name="y2" value="172" />
+          <int32 name="prev" value="81" />
+          <int32 name="next" value="83" />
+        </dir>
+        <dir name="83">
+          <int32 name="x1" value="-1352" />
+          <int32 name="y1" value="172" />
+          <int32 name="x2" value="-1273" />
+          <int32 name="y2" value="172" />
+          <int32 name="prev" value="82" />
+          <int32 name="next" value="84" />
+        </dir>
+        <dir name="84">
+          <int32 name="x1" value="-1273" />
+          <int32 name="y1" value="172" />
+          <int32 name="x2" value="-1272" />
+          <int32 name="y2" value="171" />
+          <int32 name="prev" value="83" />
+          <int32 name="next" value="85" />
+        </dir>
+        <dir name="85">
+          <int32 name="x1" value="-1272" />
+          <int32 name="y1" value="171" />
+          <int32 name="x2" value="-1249" />
+          <int32 name="y2" value="171" />
+          <int32 name="prev" value="84" />
+          <int32 name="next" value="0" />
+        </dir>
+      </dir>
+    </dir>
+  </dir>
+  <dir name="ladderRope">
+    <dir name="1">
+      <int32 name="l" value="0" />
+      <int32 name="uf" value="1" />
+      <int32 name="x" value="-1333" />
+      <int32 name="y1" value="-33" />
+      <int32 name="y2" value="142" />
+      <int32 name="page" value="2" />
+    </dir>
+    <dir name="2">
+      <int32 name="l" value="0" />
+      <int32 name="uf" value="1" />
+      <int32 name="x" value="-1588" />
+      <int32 name="y1" value="233" />
+      <int32 name="y2" value="409" />
+      <int32 name="page" value="3" />
+    </dir>
+    <dir name="3">
+      <int32 name="l" value="0" />
+      <int32 name="uf" value="1" />
+      <int32 name="x" value="-904" />
+      <int32 name="y1" value="233" />
+      <int32 name="y2" value="407" />
+      <int32 name="page" value="3" />
+    </dir>
+    <dir name="4">
+      <int32 name="l" value="0" />
+      <int32 name="uf" value="1" />
+      <int32 name="x" value="-1179" />
+      <int32 name="y1" value="499" />
+      <int32 name="y2" value="674" />
+      <int32 name="page" value="4" />
+    </dir>
+  </dir>
+  <dir name="miniMap">
+    <png name="canvas" width="88" height="79" format="1" scale="0" pages="0" value="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" />
+    <int32 name="width" value="1415" />
+    <int32 name="height" value="1264" />
+    <int32 name="centerX" value="2103" />
+    <int32 name="centerY" value="246" />
+    <int32 name="mag" value="4" />
+  </dir>
+  <dir name="portal">
+    <dir name="0">
+      <string name="pn" value="sp" />
+      <int32 name="pt" value="0" />
+      <int32 name="x" value="-972" />
+      <int32 name="y" value="-87" />
+      <int32 name="tm" value="999999999" />
+      <string name="tn" value="" />
+    </dir>
+    <dir name="1">
+      <string name="pn" value="out00" />
+      <int32 name="pt" value="2" />
+      <int32 name="x" value="-881" />
+      <int32 name="y" value="-95" />
+      <int32 name="tm" value="103010000" />
+      <string name="tn" value="hiden00" />
+    </dir>
+  </dir>
+</dir>

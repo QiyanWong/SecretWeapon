@@ -43,15 +43,18 @@ from decision_engine import DecisionEngine
 from captcha_detector import CaptchaAlertDetector, BotSessionLogger, get_system_volume, set_system_volume
 from disconnect_detector import DisconnectAlertDetector
 from auto_buff_manager import AutoBuffManager
+from hp_mp_detector import HpMpDetector
 
 # 项目基础路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR = os.path.join(BASE_DIR, "models")
 MODEL_PATH = os.path.join(BASE_DIR, "best.pt")
 FALLBACK_MODEL = os.path.join(BASE_DIR, "yolov8n.pt")
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
 DATASET_IMG_DIR = os.path.join(DATASET_DIR, "raw_images")
 DEFAULT_COMBAT_CONFIG_PATH = os.path.join(DATASET_DIR, "combat_config.json")
 DEFAULT_MONSTER_PRIORITY_PATH = os.path.join(DATASET_DIR, "monster_priority.txt")
+os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(DATASET_IMG_DIR, exist_ok=True)
 
 
@@ -211,8 +214,8 @@ class DetectorApp(QMainWindow):
         self.route_manager = RouteManager()
         self.player_map_pos = None
 
-        # 全局快捷键 F1/F2/F3 (录制) / F9 (停止打怪) 状态记录
-        self.hotkey_states = {0x70: False, 0x71: False, 0x72: False, 0x78: False}
+        # 全局快捷键 F1~F4(录制) / F5(标记层) / F7(诊断) / F8(截图) / F9(停止) 状态记录
+        self.hotkey_states = {0x70: False, 0x71: False, 0x72: False, 0x73: False, 0x74: False, 0x76: False, 0x77: False, 0x78: False}
 
         # 初始化底层驱动与决策引擎
         self.game_controller = GameController()
@@ -223,18 +226,11 @@ class DetectorApp(QMainWindow):
         self.last_captcha_log_time = 0.0
         self.last_dc_log_time = 0.0
         self.auto_buff_manager = AutoBuffManager(self.game_controller)
+        self.hp_mp_detector = HpMpDetector()
 
-        # 4. 加载 YOLO 权重
-        if os.path.exists(MODEL_PATH):
-            self.weights = MODEL_PATH
-            print(f"【成功】已加载最优模型: {self.weights}")
-        elif os.path.exists(FALLBACK_MODEL):
-            self.weights = FALLBACK_MODEL
-            print(f"【注意】未找到 best.pt，加载基础模型: {self.weights}")
-        else:
-            self.weights = "yolov8n.pt"
-
-        self.model = YOLO(self.weights)
+        # 4. 加载 YOLO 权重 (由下拉选择器动态管理与自动默认最新版本)
+        self.weights = None
+        self.model = None
         self.sct = mss.MSS()
         self.selected_hwnd = None
 
@@ -286,7 +282,7 @@ class DetectorApp(QMainWindow):
         """)
 
         self.init_ui()
-        self.log_model_info()
+        self.refresh_model_list()
         self.refresh_window_list()
         
         if is_admin():
@@ -313,6 +309,8 @@ class DetectorApp(QMainWindow):
     def log_model_info(self):
         self.log("=" * 50)
         self.log(f"已成功加载 YOLO 权重文件: {self.weights}")
+        device_str = f"⚡ GPU加速 (CUDA:0 - {torch.cuda.get_device_name(0)})" if torch.cuda.is_available() else "⚠️ CPU模式"
+        self.log(f"运行设备: {device_str}")
         if hasattr(self.model, 'names') and self.model.names:
             classes_str = ", ".join([f"{k}:{v}" for k, v in self.model.names.items()])
             self.log(f"包含的识别类别 ({len(self.model.names)} 类): [{classes_str}]")
@@ -328,20 +326,31 @@ class DetectorApp(QMainWindow):
         top_group = QGroupBox("目标游戏窗口绑定与识别门槛设置")
         top_layout = QHBoxLayout(top_group)
 
-        top_layout.addWidget(QLabel("选择窗口:"))
+        top_layout.addWidget(QLabel("窗口:"))
         self.cb_windows = QComboBox()
         self.cb_windows.currentIndexChanged.connect(self.on_window_selected)
-        top_layout.addWidget(self.cb_windows, 3)
+        top_layout.addWidget(self.cb_windows, 2)
 
         self.btn_refresh = QPushButton("刷新窗口")
         self.btn_refresh.clicked.connect(self.refresh_window_list)
         top_layout.addWidget(self.btn_refresh)
 
-        top_layout.addWidget(QLabel("Conf门槛:"))
+        # 动态权重模型选择列表 (默认选用最近训练生成的版本)
+        top_layout.addWidget(QLabel("模型:"))
+        self.cb_models = QComboBox()
+        self.cb_models.setToolTip("动态选择并切换 YOLO 权重模型，默认自动加载最新训练版本")
+        self.cb_models.currentIndexChanged.connect(self.on_model_selected)
+        top_layout.addWidget(self.cb_models, 2)
+
+        self.btn_refresh_models = QPushButton("刷新模型")
+        self.btn_refresh_models.clicked.connect(self.refresh_model_list)
+        top_layout.addWidget(self.btn_refresh_models)
+
+        top_layout.addWidget(QLabel("门槛:"))
         self.slider_conf = QSlider(Qt.Horizontal)
         self.slider_conf.setRange(1, 95)
         self.slider_conf.setValue(15)
-        self.slider_conf.setFixedWidth(120)
+        self.slider_conf.setFixedWidth(90)
         self.slider_conf.valueChanged.connect(self.on_conf_changed)
         top_layout.addWidget(self.slider_conf)
 
@@ -548,20 +557,57 @@ class DetectorApp(QMainWindow):
 
         mid_layout.addWidget(minimap_group, 2)
 
-        # 🌟 高级 XML 地图拓扑寻路配置组 (双模式无缝切换)
-        map_nav_group = QGroupBox("🗺️ 寻路模式与地图拓扑 (双模式无缝切换)")
+        # 🌟 高级 XML 地图拓扑寻路与多层平台打怪配置组
+        map_nav_group = QGroupBox("🗺️ 地图拓扑寻路与多层打怪 (永久安全区 + 梯子/下跳)")
         map_nav_layout = QVBoxLayout(map_nav_group)
 
         h_nav_mode = QHBoxLayout()
-        self.chk_advanced_nav = QCheckBox("🌟 启用高级 XML 地图拓扑寻路 (A* 自动跳跃/爬绳)")
+        self.chk_advanced_nav = QCheckBox("🌟 启用地图 XML 多层拓扑导航 (梯子攀爬/智能下跳)")
         self.chk_advanced_nav.toggled.connect(self.on_nav_mode_toggled)
         h_nav_mode.addWidget(self.chk_advanced_nav)
         map_nav_layout.addLayout(h_nav_mode)
 
+        # 多层打怪标记控制行
+        h_layer_marks = QHBoxLayout()
+        self.btn_toggle_mark = QPushButton("⭐ 标记/取消当前平台 (F5)")
+        self.btn_toggle_mark.setToolTip("快捷键 F5: 将当前角色所在的平台标记或取消标记为打怪层。若未标记任何层，默认在当前层巡逻打怪。")
+        self.btn_toggle_mark.clicked.connect(self.toggle_current_platform_mark)
+        self.btn_clear_marks = QPushButton("🗑️ 清空标记")
+        self.btn_clear_marks.setToolTip("清空所有已标记的打怪平台，恢复为单层巡逻模式")
+        self.btn_clear_marks.clicked.connect(self.clear_platform_marks)
+        self.lbl_marked_status = QLabel("打怪层: 默认当前层 (0层标记)")
+        self.lbl_marked_status.setStyleSheet("color: #f9e2af; font-weight: bold;")
+        h_layer_marks.addWidget(self.btn_toggle_mark)
+        h_layer_marks.addWidget(self.btn_clear_marks)
+        h_layer_marks.addWidget(self.lbl_marked_status)
+        map_nav_layout.addLayout(h_layer_marks)
+
+        # 多层巡逻转场参数配置行
+        h_layer_params = QHBoxLayout()
+        h_layer_params.addWidget(QLabel("单层打怪趟数:"))
+        self.sp_turns_per_layer = QSpinBox()
+        self.sp_turns_per_layer.setRange(1, 10)
+        self.sp_turns_per_layer.setValue(1)
+        self.sp_turns_per_layer.setSuffix(" 趟")
+        self.sp_turns_per_layer.setFixedWidth(65)
+        self.sp_turns_per_layer.setToolTip("在当前平台巡逻清怪的趟数 (从一端推到另一端折返算 1 趟，打一个来回算 2 趟)。达到趟数后自动转场下跳/爬梯。默认 1 趟。")
+        h_layer_params.addWidget(self.sp_turns_per_layer)
+
+        h_layer_params.addWidget(QLabel("单层最长打怪:"))
+        self.sp_layer_max_dwell = QSpinBox()
+        self.sp_layer_max_dwell.setRange(5, 180)
+        self.sp_layer_max_dwell.setValue(25)
+        self.sp_layer_max_dwell.setSuffix(" 秒")
+        self.sp_layer_max_dwell.setFixedWidth(65)
+        self.sp_layer_max_dwell.setToolTip("即使未达到折返趟数，在当前层逗留打怪达到该秒数后也将强制换层；换层爬梯连续3次失败后的下次尝试冷却时长亦与此参数同步。默认 25 秒。")
+        h_layer_params.addWidget(self.sp_layer_max_dwell)
+        map_nav_layout.addLayout(h_layer_params)
+
         h_platform = QHBoxLayout()
-        self.chk_platform_patrol = QCheckBox("🛡️ 平台打怪 (锁定当前平台与避险)")
+        self.chk_platform_patrol = QCheckBox("🛡️ 平台安全区防跌落 (常开)")
+        self.chk_platform_patrol.setChecked(True)
         self.chk_platform_patrol.setStyleSheet("color: #a6e3a1; font-weight: bold;")
-        self.chk_platform_patrol.setToolTip("根据导入的地图 XML 自动判定玩家所在的单一平台，无视一切寻路节点；左右边缘分别设立危险区，落入危险区立刻退出战斗并往安全中点回撤，在安全打怪区间内巡逻。")
+        self.chk_platform_patrol.setToolTip("自动在平台两端设立危险避险区。载入地图 XML 后永久生效，防止战斗或巡逻跌落悬崖。")
         self.chk_platform_patrol.toggled.connect(self.on_platform_mode_toggled)
         h_platform.addWidget(self.chk_platform_patrol)
 
@@ -633,6 +679,162 @@ class DetectorApp(QMainWindow):
         map_nav_layout.addLayout(h_overlay_align)
 
         mid_layout.addWidget(map_nav_group)
+
+        # 🌟 生命与蓝量智能监控与自动补给配置组
+        potion_group = QGroupBox("❤️💙 角色生命/魔法智能监控与自动补给 (HP/MP Auto Potion)")
+        potion_layout = QVBoxLayout(potion_group)
+
+        # 1. 实时进度条与状态展示行
+        h_gauge_bars = QHBoxLayout()
+        
+        self.bar_hp = QProgressBar()
+        self.bar_hp.setRange(0, 100)
+        self.bar_hp.setValue(100)
+        self.bar_hp.setTextVisible(True)
+        self.bar_hp.setFormat("HP: 等待监测...")
+        self.bar_hp.setFixedHeight(22)
+        self.bar_hp.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #45475a;
+                border-radius: 4px;
+                background-color: #313244;
+                text-align: center;
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #f38ba8, stop:1 #d20f39);
+                border-radius: 3px;
+            }
+        """)
+        h_gauge_bars.addWidget(self.bar_hp, 1)
+
+        self.bar_mp = QProgressBar()
+        self.bar_mp.setRange(0, 100)
+        self.bar_mp.setValue(100)
+        self.bar_mp.setTextVisible(True)
+        self.bar_mp.setFormat("MP: 等待监测...")
+        self.bar_mp.setFixedHeight(22)
+        self.bar_mp.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #45475a;
+                border-radius: 4px;
+                background-color: #313244;
+                text-align: center;
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #89b4fa, stop:1 #1e66f5);
+                border-radius: 3px;
+            }
+        """)
+        h_gauge_bars.addWidget(self.bar_mp, 1)
+
+        potion_layout.addLayout(h_gauge_bars)
+
+        # 状态提示标签
+        self.lbl_gauge_status = QLabel("⚪ 状态栏定位: 等待游戏画面输入...")
+        self.lbl_gauge_status.setStyleSheet("color: #a6adc8; font-size: 11px; margin-left: 2px;")
+        potion_layout.addWidget(self.lbl_gauge_status)
+
+        # 2. 自动加血行
+        h_hp_row = QHBoxLayout()
+        self.chk_auto_hp = QCheckBox("💖 自动加血")
+        self.chk_auto_hp.setChecked(True)
+        self.chk_auto_hp.setStyleSheet("color: #f38ba8; font-weight: bold;")
+        self.chk_auto_hp.toggled.connect(self.sync_potion_config)
+        h_hp_row.addWidget(self.chk_auto_hp)
+
+        h_hp_row.addWidget(QLabel("低于阈值:"))
+        self.sp_hp_thresh = QSpinBox()
+        self.sp_hp_thresh.setRange(1, 99)
+        self.sp_hp_thresh.setValue(60)
+        self.sp_hp_thresh.setSuffix(" %")
+        self.sp_hp_thresh.setFixedWidth(65)
+        self.sp_hp_thresh.setToolTip("当生命值百分比低于此阈值时，自动触发喝红药按键")
+        self.sp_hp_thresh.valueChanged.connect(self.sync_potion_config)
+        h_hp_row.addWidget(self.sp_hp_thresh)
+
+        h_hp_row.addWidget(QLabel("按键:"))
+        self.cb_key_hp = QComboBox()
+        self.cb_key_hp.setEditable(True)
+        self.cb_key_hp.addItems(["Delete", "PageDown", "End", "1", "2", "3", "4", "5", "Q", "W", "E", "R", "Insert", "Home", "PageUp"])
+        self.cb_key_hp.setCurrentText("Delete")
+        self.cb_key_hp.setFixedWidth(85)
+        self.cb_key_hp.setToolTip("加血喝药按键 (可下拉选择或直接输入键盘按键)")
+        self.cb_key_hp.currentTextChanged.connect(self.sync_potion_config)
+        h_hp_row.addWidget(self.cb_key_hp)
+
+        h_hp_row.addWidget(QLabel("冷却(CD):"))
+        self.sp_hp_cd = QDoubleSpinBox()
+        self.sp_hp_cd.setRange(0.1, 5.0)
+        self.sp_hp_cd.setSingleStep(0.05)
+        self.sp_hp_cd.setValue(0.60)
+        self.sp_hp_cd.setSuffix(" s")
+        self.sp_hp_cd.setFixedWidth(65)
+        self.sp_hp_cd.setToolTip("喝红药最短间隔 CD (带 ±10% 拟人化抖动，防止狂喝浪费药水)")
+        self.sp_hp_cd.valueChanged.connect(self.sync_potion_config)
+        h_hp_row.addWidget(self.sp_hp_cd)
+
+        self.btn_test_hp_key = QPushButton("🧪 测试")
+        self.btn_test_hp_key.setFixedWidth(50)
+        self.btn_test_hp_key.setToolTip("测试触发一次加血按键")
+        self.btn_test_hp_key.clicked.connect(self.test_hp_potion_key)
+        h_hp_row.addWidget(self.btn_test_hp_key)
+
+        potion_layout.addLayout(h_hp_row)
+
+        # 3. 自动加蓝行
+        h_mp_row = QHBoxLayout()
+        self.chk_auto_mp = QCheckBox("💧 自动加蓝")
+        self.chk_auto_mp.setChecked(True)
+        self.chk_auto_mp.setStyleSheet("color: #89b4fa; font-weight: bold;")
+        self.chk_auto_mp.toggled.connect(self.sync_potion_config)
+        h_mp_row.addWidget(self.chk_auto_mp)
+
+        h_mp_row.addWidget(QLabel("低于阈值:"))
+        self.sp_mp_thresh = QSpinBox()
+        self.sp_mp_thresh.setRange(1, 99)
+        self.sp_mp_thresh.setValue(40)
+        self.sp_mp_thresh.setSuffix(" %")
+        self.sp_mp_thresh.setFixedWidth(65)
+        self.sp_mp_thresh.setToolTip("当魔法值百分比低于此阈值时，自动触发喝蓝药按键")
+        self.sp_mp_thresh.valueChanged.connect(self.sync_potion_config)
+        h_mp_row.addWidget(self.sp_mp_thresh)
+
+        h_mp_row.addWidget(QLabel("按键:"))
+        self.cb_key_mp = QComboBox()
+        self.cb_key_mp.setEditable(True)
+        self.cb_key_mp.addItems(["PageDown", "Delete", "End", "1", "2", "3", "4", "5", "Q", "W", "E", "R", "Insert", "Home", "PageUp"])
+        self.cb_key_mp.setCurrentText("PageDown")
+        self.cb_key_mp.setFixedWidth(85)
+        self.cb_key_mp.setToolTip("加蓝喝药按键 (可下拉选择或直接输入键盘按键)")
+        self.cb_key_mp.currentTextChanged.connect(self.sync_potion_config)
+        h_mp_row.addWidget(self.cb_key_mp)
+
+        h_mp_row.addWidget(QLabel("冷却(CD):"))
+        self.sp_mp_cd = QDoubleSpinBox()
+        self.sp_mp_cd.setRange(0.1, 5.0)
+        self.sp_mp_cd.setSingleStep(0.05)
+        self.sp_mp_cd.setValue(0.60)
+        self.sp_mp_cd.setSuffix(" s")
+        self.sp_mp_cd.setFixedWidth(65)
+        self.sp_mp_cd.setToolTip("喝蓝药最短间隔 CD (带 ±10% 拟人化抖动，防止狂喝浪费药水)")
+        self.sp_mp_cd.valueChanged.connect(self.sync_potion_config)
+        h_mp_row.addWidget(self.sp_mp_cd)
+
+        self.btn_test_mp_key = QPushButton("🧪 测试")
+        self.btn_test_mp_key.setFixedWidth(50)
+        self.btn_test_mp_key.setToolTip("测试触发一次加蓝按键")
+        self.btn_test_mp_key.clicked.connect(self.test_mp_potion_key)
+        h_mp_row.addWidget(self.btn_test_mp_key)
+
+        potion_layout.addLayout(h_mp_row)
+
+        mid_layout.addWidget(potion_group)
 
         # 中间：战斗攻击与持续 Buff 技能配置组
         strat_group = QGroupBox("⚔️ 战斗攻击与持续 Buff 技能配置")
@@ -992,6 +1194,93 @@ class DetectorApp(QMainWindow):
         self.minimap_tracker.set_player_template(patch)
         self.log(f"【模板提取成功】已提取 {patch.shape} 大小的模板并保存！")
 
+    def get_available_models(self):
+        """
+        获取当前所有可用 YOLO 权重模型，按文件最后修改时间倒序排列 (最新的排在最前)
+        来源包括:
+        1. models/*.pt (版本化训练模型)
+        2. BASE_DIR/*.pt (如 best.pt, yolov8n.pt 等)
+        """
+        model_paths = []
+        seen = set()
+
+        # 1. 扫描 models/ 目录
+        if os.path.exists(MODELS_DIR):
+            for f in os.listdir(MODELS_DIR):
+                if f.endswith('.pt'):
+                    full = os.path.abspath(os.path.join(MODELS_DIR, f))
+                    real = os.path.realpath(full)
+                    if real not in seen and os.path.exists(full):
+                        seen.add(real)
+                        model_paths.append(full)
+
+        # 2. 扫描根目录
+        for f in os.listdir(BASE_DIR):
+            if f.endswith('.pt') and f != 'yolov8n.pt': # 预训练基础模型放最后作为备用
+                full = os.path.abspath(os.path.join(BASE_DIR, f))
+                real = os.path.realpath(full)
+                if real not in seen and os.path.exists(full):
+                    seen.add(real)
+                    model_paths.append(full)
+
+        # 3. 按文件修改时间倒序排序 (最新训练的模型置顶于首位)
+        model_paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+
+        # 4. 兜底追加 yolov8n.pt
+        if os.path.exists(FALLBACK_MODEL):
+            real_fb = os.path.realpath(FALLBACK_MODEL)
+            if real_fb not in seen:
+                model_paths.append(FALLBACK_MODEL)
+
+        return model_paths
+
+    def refresh_model_list(self):
+        """刷新模型选择下拉列表，默认自动选中最新版本"""
+        models = self.get_available_models()
+        self.cb_models.blockSignals(True)
+        self.cb_models.clear()
+
+        if not models:
+            self.cb_models.addItem("未发现模型 (需先训练)", None)
+            self.cb_models.blockSignals(False)
+            return
+
+        for p in models:
+            fname = os.path.basename(p)
+            mtime = datetime.datetime.fromtimestamp(os.path.getmtime(p)).strftime("%Y-%m-%d %H:%M:%S")
+            display_text = f"{fname}  ({mtime})"
+            self.cb_models.addItem(display_text, p)
+
+        # 默认选中第一项 (最新模型)
+        self.cb_models.setCurrentIndex(0)
+        self.cb_models.blockSignals(False)
+
+        selected_path = self.cb_models.currentData()
+        if selected_path:
+            self.load_selected_model(selected_path)
+
+    def on_model_selected(self, index):
+        """用户在下拉列表中手动切换模型"""
+        model_path = self.cb_models.itemData(index)
+        if model_path and model_path != self.weights:
+            self.load_selected_model(model_path)
+
+    def load_selected_model(self, model_path):
+        """加载指定的 YOLO 权重模型"""
+        if not model_path or not os.path.exists(model_path):
+            return
+        try:
+            prev_weights = self.weights
+            self.weights = model_path
+            self.model = YOLO(self.weights)
+            if torch.cuda.is_available():
+                self.model.to('cuda')
+            if prev_weights is not None:
+                self.log(f"【模型切换成功】已装载目标模型: {os.path.basename(model_path)}")
+            self.log_model_info()
+        except Exception as e:
+            self.log(f"❌ 加载模型权重失败: {e}")
+
     def refresh_window_list(self):
         self.cb_windows.blockSignals(True)
         self.cb_windows.clear()
@@ -1032,14 +1321,64 @@ class DetectorApp(QMainWindow):
             self.lbl_display.setText("画面渲染已暂停 (极速省资源模式)\n\n后台仍持续捕获画面并进行 YOLO 识别！")
             self.log("【画面渲染】已暂停：节省 CPU/GPU 渲染资源！")
 
+    def test_hp_potion_key(self):
+        """测试加血喝药按键"""
+        key = self.cb_key_hp.currentText().strip()
+        if key and self.game_controller:
+            self.game_controller.tap_key(key)
+            self.log(f"🧪【按键测试】已尝试触发加血按键 -> [{key}]")
+        else:
+            self.log("⚠️【按键测试】加血按键为空或控制器未就绪！")
+
+    def test_mp_potion_key(self):
+        """测试加蓝喝药按键"""
+        key = self.cb_key_mp.currentText().strip()
+        if key and self.game_controller:
+            self.game_controller.tap_key(key)
+            self.log(f"🧪【按键测试】已尝试触发加蓝按键 -> [{key}]")
+        else:
+            self.log("⚠️【按键测试】加蓝按键为空或控制器未就绪！")
+
+    def sync_potion_config(self):
+        """同步生命与魔法智能补给配置至 AutoBuffManager"""
+        if hasattr(self, 'auto_buff_manager') and self.auto_buff_manager:
+            self.auto_buff_manager.update_config("auto_hp", self.chk_auto_hp.isChecked())
+            self.auto_buff_manager.update_config("hp_threshold", self.sp_hp_thresh.value())
+            self.auto_buff_manager.update_config("hp_key", self.cb_key_hp.currentText().strip())
+            self.auto_buff_manager.update_config("hp_cooldown", float(self.sp_hp_cd.value()))
+
+            self.auto_buff_manager.update_config("auto_mp", self.chk_auto_mp.isChecked())
+            self.auto_buff_manager.update_config("mp_threshold", self.sp_mp_thresh.value())
+            self.auto_buff_manager.update_config("mp_key", self.cb_key_mp.currentText().strip())
+            self.auto_buff_manager.update_config("mp_cooldown", float(self.sp_mp_cd.value()))
+
     def sync_buff_config(self):
-        self.auto_buff_manager.update_config("auto_hp", self.chk_auto_hp.isChecked())
-        self.auto_buff_manager.update_config("hp_key", self.cb_key_hp.currentText())
-        self.auto_buff_manager.update_config("auto_mp", self.chk_auto_mp.isChecked())
-        self.auto_buff_manager.update_config("mp_key", self.cb_key_mp.currentText())
-        self.auto_buff_manager.update_config("auto_buff", self.chk_auto_buff.isChecked())
-        self.auto_buff_manager.update_config("buff_key", self.cb_key_buff.currentText())
-        self.auto_buff_manager.update_config("buff_interval", float(self.sp_buff_interval.value()))
+        self.sync_potion_config()
+
+    def update_potion_gauges(self, hp_pct: float, mp_pct: float, is_ok: bool, debug_info: dict = None):
+        """实时更新 UI 面板上的生命与蓝量进度条与状态标签"""
+        if not hasattr(self, 'bar_hp') or not hasattr(self, 'bar_mp'):
+            return
+
+        if is_ok and hp_pct is not None and mp_pct is not None:
+            hp_val = max(0, min(100, int(round(hp_pct * 100))))
+            mp_val = max(0, min(100, int(round(mp_pct * 100))))
+            hp_th = self.sp_hp_thresh.value()
+            mp_th = self.sp_mp_thresh.value()
+
+            self.bar_hp.setValue(hp_val)
+            self.bar_hp.setFormat(f"HP: {hp_pct * 100:.1f}% (低于{hp_th}%喝红)")
+
+            self.bar_mp.setValue(mp_val)
+            self.bar_mp.setFormat(f"MP: {mp_pct * 100:.1f}% (低于{mp_th}%喝蓝)")
+
+            loc = debug_info.get("match_loc", (0, 0)) if debug_info else (0, 0)
+            score = debug_info.get("match_score", 1.0) if debug_info else 1.0
+            self.lbl_gauge_status.setText(f"🟢 状态栏锁定: X={loc[0]}, Y={loc[1]} | 置信度: {score:.2f} | 守护就绪")
+            self.lbl_gauge_status.setStyleSheet("color: #a6e3a1; font-size: 11px; margin-left: 2px;")
+        else:
+            self.lbl_gauge_status.setText("⚪ 未检测到血条/蓝条 (请确认游戏窗口在最前且非黑屏切换中)")
+            self.lbl_gauge_status.setStyleSheet("color: #fab387; font-size: 11px; margin-left: 2px;")
 
     def toggle_auto_buff(self, state):
         if state == Qt.Checked:
@@ -1141,6 +1480,7 @@ class DetectorApp(QMainWindow):
                 if first_xml and os.path.exists(first_xml):
                     if self.decision_engine.load_map_xml(first_xml):
                         self._apply_map_canvas_size()
+                        self.update_marked_layers_ui()
 
     def on_platform_mode_toggled(self, checked):
         """平台打怪模式切换"""
@@ -1153,6 +1493,7 @@ class DetectorApp(QMainWindow):
                 if not self.decision_engine.map_parser:
                     self.decision_engine.load_map_xml(xml_path)
                     self._apply_map_canvas_size()
+                    self.update_marked_layers_ui()
                 self.log(f"🛡️ 【模式切换】已启用 平台打怪 模式 (已锁定地图: {os.path.basename(xml_path)})")
             else:
                 self.log("【提示】未找到有效的地图 XML，请先在 /map 文件夹中放入解包数据")
@@ -1192,6 +1533,7 @@ class DetectorApp(QMainWindow):
                 if not self.decision_engine.map_parser:
                     self.decision_engine.load_map_xml(xml_path)
                     self._apply_map_canvas_size()
+                    self.update_marked_layers_ui()
                 self.log(f"【模式切换】已启用 🌟 高级 XML 地图拓扑寻路模式 (已载入: {os.path.basename(xml_path)})")
             else:
                 self.log("【提示】未找到有效的地图 XML，请先在 /map 文件夹中放入解包数据")
@@ -1207,6 +1549,7 @@ class DetectorApp(QMainWindow):
         if xml_path and os.path.exists(xml_path):
             if self.decision_engine.load_map_xml(xml_path):
                 self._apply_map_canvas_size()
+                self.update_marked_layers_ui()
                 self.log(f"【地图更新】已载入地图: {os.path.basename(xml_path)}，小地图平台已就绪")
 
     def _apply_map_canvas_size(self):
@@ -1245,6 +1588,47 @@ class DetectorApp(QMainWindow):
         self.sp_overlay_offset_x.setValue(0)
         self.sp_overlay_offset_y.setValue(0)
         self.log("📐 【Overlay微调】已重置平台对齐偏移量为 (0, 0)")
+
+    def update_marked_layers_ui(self):
+        """刷新打怪平台标记状态显示"""
+        nav = getattr(self.decision_engine, "navigator", None)
+        if not nav or not nav.marked:
+            self.lbl_marked_status.setText("打怪层: 默认当前层 (0层标记)")
+            self.lbl_marked_status.setStyleSheet("color: #f9e2af; font-weight: bold;")
+        else:
+            cnt = len(nav.marked)
+            pids = ",".join(str(p) for p in sorted(nav.marked))
+            self.lbl_marked_status.setText(f"打怪层: {cnt}层 [L{pids}]")
+            self.lbl_marked_status.setStyleSheet("color: #a6e3a1; font-weight: bold;")
+
+    def toggle_current_platform_mark(self):
+        """快捷键 F5 或按钮触发: 标记/取消标记当前角色脚下所在的平台为打怪层"""
+        if not self.decision_engine.map_parser or not self.player_map_pos:
+            self.log("⚠️ 【平台标记失败】尚未加载地图 XML 或未定位到角色小地图坐标")
+            return
+        px, py = self.player_map_pos
+        xw, yw = self.decision_engine.map_parser.minimap_to_world(
+            px, py, crop_w=self.sp_crop_w.value(), crop_h=self.sp_crop_h.value()
+        )
+        plat, is_marked = self.decision_engine.toggle_platform_mark(xw, yw)
+        if plat is None:
+            self.log(f"⚠️ 【平台标记】在世界坐标 ({xw:.0f}, {yw:.0f}) 未能吸附到任何有效平台")
+            return
+        
+        self.update_marked_layers_ui()
+        nav = self.decision_engine.navigator
+        total_cnt = len(nav.marked) if nav else 0
+        if is_marked:
+            drop_x = int(plat.center_x)
+            self.log(f"⭐ 【多层平台导航】已标记 平台 #L{plat.id} 为打怪层 (Y={plat.avg_y:.0f}, 默认中点下跳: X={drop_x}, 当前共标记 {total_cnt} 层)")
+        else:
+            self.log(f"🗑️ 【多层平台导航】已取消 平台 #L{plat.id} 的打怪标记 (剩余 {total_cnt} 层)")
+
+    def clear_platform_marks(self):
+        """清空所有打怪平台标记，恢复默认在当前层打怪"""
+        self.decision_engine.clear_platform_marks()
+        self.update_marked_layers_ui()
+        self.log("🗑️ 【多层平台导航】已清空所有标记平台，恢复为单层打怪模式 (默认在当前层巡逻)")
 
     def add_buff_item_row(self, key_text="1", cooldown_val=180, is_checked=False):
         """动态新增一行持续 Buff 配置"""
@@ -1353,6 +1737,14 @@ class DetectorApp(QMainWindow):
                 "captcha_volume_boost": self.chk_captcha_volume.isChecked(),
                 "disconnect_alert": self.chk_disconnect_alert.isChecked(),
                 "disconnect_volume_boost": self.chk_disconnect_volume.isChecked(),
+                "auto_hp": self.chk_auto_hp.isChecked(),
+                "hp_threshold": self.sp_hp_thresh.value(),
+                "hp_key": self.cb_key_hp.currentText().strip(),
+                "hp_cooldown": float(self.sp_hp_cd.value()),
+                "auto_mp": self.chk_auto_mp.isChecked(),
+                "mp_threshold": self.sp_mp_thresh.value(),
+                "mp_key": self.cb_key_mp.currentText().strip(),
+                "mp_cooldown": float(self.sp_mp_cd.value()),
                 "buffs": buffs_data
             }
 
@@ -1438,6 +1830,27 @@ class DetectorApp(QMainWindow):
                 self.chk_disconnect_alert.setChecked(bool(cfg["disconnect_alert"]))
             if "disconnect_volume_boost" in cfg:
                 self.chk_disconnect_volume.setChecked(bool(cfg["disconnect_volume_boost"]))
+
+            # 载入自动加血加蓝配置
+            if "auto_hp" in cfg:
+                self.chk_auto_hp.setChecked(bool(cfg["auto_hp"]))
+            if "hp_threshold" in cfg:
+                self.sp_hp_thresh.setValue(int(cfg["hp_threshold"]))
+            if "hp_key" in cfg:
+                self.cb_key_hp.setCurrentText(str(cfg["hp_key"]))
+            if "hp_cooldown" in cfg:
+                self.sp_hp_cd.setValue(float(cfg["hp_cooldown"]))
+
+            if "auto_mp" in cfg:
+                self.chk_auto_mp.setChecked(bool(cfg["auto_mp"]))
+            if "mp_threshold" in cfg:
+                self.sp_mp_thresh.setValue(int(cfg["mp_threshold"]))
+            if "mp_key" in cfg:
+                self.cb_key_mp.setCurrentText(str(cfg["mp_key"]))
+            if "mp_cooldown" in cfg:
+                self.sp_mp_cd.setValue(float(cfg["mp_cooldown"]))
+
+            self.sync_potion_config()
 
             buffs_data = cfg.get("buffs", [])
             if buffs_data:
@@ -1563,6 +1976,15 @@ class DetectorApp(QMainWindow):
         elif not is_f9_down:
             self.hotkey_states[vk_f9] = False
 
+        # 1.3. 标记/取消标记当前层打怪快捷键 F5 (0x74)
+        vk_f5 = 0x74
+        is_f5_down = win32api.GetAsyncKeyState(vk_f5) & 0x8000
+        if is_f5_down and not self.hotkey_states.get(vk_f5, False):
+            self.hotkey_states[vk_f5] = True
+            self.toggle_current_platform_mark()
+        elif not is_f5_down:
+            self.hotkey_states[vk_f5] = False
+
         # 1.4. 一键导出小地图诊断快照快捷键 F7 (0x76)
         vk_f7 = 0x76
         is_f7_down = win32api.GetAsyncKeyState(vk_f7) & 0x8000
@@ -1669,6 +2091,16 @@ class DetectorApp(QMainWindow):
         # 1. 快捷键轮询 (包含 F9 强制停止与 F1 端点录制)
         self.poll_hotkeys()
 
+        # 1.5 角色生命 (HP) 与魔法 (MP) 毫秒级监测与自动喝药判定
+        hp_pct, mp_pct, is_gauge_ok, gauge_dbg = self.hp_mp_detector.detect(game_frame)
+        self.update_potion_gauges(hp_pct, mp_pct, is_gauge_ok, gauge_dbg)
+        if is_gauge_ok:
+            # 自动喝药判定 (独立生命守护，无论是否开启自动打怪，只要勾选均生效)
+            self.auto_buff_manager.check_gauges(hp_pct, mp_pct, is_gauge_ok, log_callback=self.log)
+            # 在主监控画面中实时绘制高亮血蓝框与实时百分比浮字
+            if self.is_monitoring_preview:
+                self.hp_mp_detector.draw_overlay(game_frame, hp_pct, mp_pct, gauge_dbg)
+
         # 2. 从游戏帧剪裁小地图图像 & 进行小地图定位
         minimap_bgr = self.minimap_tracker.crop_minimap(game_frame)
         self.last_raw_minimap = minimap_bgr.copy() if minimap_bgr is not None else None
@@ -1711,33 +2143,32 @@ class DetectorApp(QMainWindow):
                     minimap_bgr, self.player_map_pos, self.route_manager, self.decision_engine
                 )
 
-                # 打印高级 A* 寻路或平台打怪状态诊断 Log (节流 1.5s)
+                # 打印多层平台导航与安全区状态诊断 Log (节流 1.5s)
                 if (self.chk_advanced_nav.isChecked() or self.chk_platform_patrol.isChecked()) and self.decision_engine.map_parser and self.player_map_pos:
                     if now_time - self.last_pos_log_time >= 1.5:
+                        self.last_pos_log_time = now_time
                         px, py = self.player_map_pos
                         mp = self.decision_engine.map_parser
                         xw, yw = mp.minimap_to_world(px, py, crop_w=self.sp_crop_w.value(), crop_h=self.sp_crop_h.value())
                         cur_fh = mp.snap_to_foothold(xw, yw)
-                        fh_str = f"平台 #{cur_fh.id} (Y={cur_fh.get_y_at_x(xw):.0f})" if cur_fh else "未吸附到平台"
-                        
-                        if self.chk_platform_patrol.isChecked():
+                        fh_str = f"FH #{cur_fh.id} (Y={cur_fh.get_y_at_x(xw):.0f})" if cur_fh else "悬空/未吸附"
+
+                        nav = getattr(self.decision_engine, "navigator", None)
+                        if nav:
+                            cur_p = nav.graph.locate(xw, yw)
+                            p_desc = f"平台 L{cur_p.id}" if cur_p else "未知层"
+                            marked_info = f"{len(nav.marked)}层标记" if nav.marked else "单层打怪"
+                            
                             pb = getattr(self.decision_engine, "current_platform_bounds", None)
                             ml = self.sp_danger_margin_left.value()
                             mr = self.sp_danger_margin_right.value()
                             if not pb and cur_fh:
                                 pb = self.decision_engine.get_platform_info(xw, yw, danger_margin_left=ml, danger_margin_right=mr)
-                            if pb:
-                                _, x_min, x_max, s_left, s_right, x_mid = pb
-                                esc_str = " | ⚠️ 正在避险回退中点" if getattr(self.decision_engine, "is_escaping_platform_danger", False) else ""
-                                margin_desc = f"左边距: {ml}px, 右边距: {mr}px" if ml != mr else f"边距: {ml}px"
-                                self.log(f"【🛡️ 平台打怪监控】世界坐标: ({xw}, {yw}) | {fh_str} | 安全区: [{s_left:.0f} ~ {s_right:.0f}] ({margin_desc}){esc_str}")
-                            else:
-                                self.log(f"【🛡️ 平台打怪监控】世界坐标: ({xw}, {yw}) | {fh_str} | 等待吸附有效平台")
+                            safe_str = f"安全区:[{pb[3]:.0f}~{pb[4]:.0f}]" if pb else "安全区:计算中"
+                            esc_str = " ⚠️正在避险回撤" if getattr(self.decision_engine, "is_escaping_platform_danger", False) else ""
+                            self.log(f"【🗺️ 多层导航】世界:({xw:.0f},{yw:.0f}) | 当前:{p_desc}({fh_str}) | 状态:{nav.status} | {safe_str} ({marked_info}){esc_str}")
                         else:
-                            active_path = self.decision_engine.active_path
-                            cur_idx = self.decision_engine.current_step_idx
-                            step_str = f"步骤: {cur_idx+1}/{len(active_path)} ({active_path[cur_idx].action} 目标X={active_path[cur_idx].target_x})" if (active_path and cur_idx < len(active_path)) else "无执行路径/等待规划"
-                            self.log(f"【🌟 A* 寻路监控】世界绝对坐标: ({xw}, {yw}) | 所在: {fh_str} | {step_str}")
+                            self.log(f"【🗺️ 导航监控】世界:({xw:.0f},{yw:.0f}) | 所在:{fh_str}")
 
             # 渲染到 lbl_minimap_display (增加尺寸保护与缩放加速)
             mlbl_w = self.lbl_minimap_display.width()
@@ -1796,10 +2227,23 @@ class DetectorApp(QMainWindow):
                         cv2.putText(game_frame, f"CAPTCHA ALERT [{score:.2f}]", (cx, max(20, cy - 8)),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-        # 2.6 游戏掉线 / 与服务器连接发生错误弹窗检测 (高危安全拦截，仅在自动打怪开启时生效)
+        # 2.6 游戏掉线 / 与服务器连接发生错误弹窗检测 (高危安全拦截，仅在自动打怪开启时生效，300ms 降频检测以最大化帧率)
         is_dc = False
+        dc_boxes = []
         if hasattr(self, 'disconnect_detector') and self.chk_disconnect_alert.isChecked() and self.is_bot_running:
-            is_dc, dc_boxes = self.disconnect_detector.detect(game_frame)
+            now_time = time.time()
+            if not hasattr(self, '_last_dc_check_time'):
+                self._last_dc_check_time = 0.0
+                self._cached_is_dc = False
+                self._cached_dc_boxes = []
+
+            if now_time - self._last_dc_check_time >= 0.3:
+                self._last_dc_check_time = now_time
+                self._cached_is_dc, self._cached_dc_boxes = self.disconnect_detector.detect(game_frame)
+
+            is_dc = self._cached_is_dc
+            dc_boxes = self._cached_dc_boxes
+
             if is_dc:
                 # 紧急制动：释放所有按键并重置决策引擎
                 if self.game_controller:
@@ -1835,7 +2279,8 @@ class DetectorApp(QMainWindow):
         if self.is_detection_enabled or self.is_bot_running:
             raw_boxes = []
             try:
-                raw_results = self.model.predict(game_frame, conf=0.01, verbose=False)
+                device = 0 if torch.cuda.is_available() else 'cpu'
+                raw_results = self.model.predict(game_frame, conf=0.01, verbose=False, device=device)
                 raw_boxes = raw_results[0].boxes if len(raw_results) > 0 else []
             except Exception as e:
                 now_t = time.time()
@@ -1953,7 +2398,9 @@ class DetectorApp(QMainWindow):
                 "danger_margin_right": self.sp_danger_margin_right.value(),
                 "danger_margin": self.sp_danger_margin_left.value(),
                 "crop_w": self.sp_crop_w.value(),
-                "crop_h": self.sp_crop_h.value()
+                "crop_h": self.sp_crop_h.value(),
+                "turns_per_layer": self.sp_turns_per_layer.value(),
+                "max_layer_dwell": float(self.sp_layer_max_dwell.value())
             }
                 
             # 执行决策
@@ -1977,9 +2424,8 @@ class DetectorApp(QMainWindow):
             lbl_h = self.lbl_display.height()
 
             if lbl_w > 10 and lbl_h > 10 and w > 0 and h > 0:
-                transform_mode = Qt.FastTransformation if getattr(self, '_is_resizing', False) else Qt.SmoothTransformation
                 scaled_pixmap = pixmap.scaled(
-                    self.lbl_display.size(), Qt.KeepAspectRatio, transform_mode
+                    self.lbl_display.size(), Qt.KeepAspectRatio, Qt.FastTransformation
                 )
 
                 sw = scaled_pixmap.width()

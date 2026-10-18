@@ -189,6 +189,20 @@ DROP_ITEMS_MAPPING = {
         'en': 'Lorang Claw',
         'category': 'monster_drop',
         'mob': 'crab'
+    },
+    'octopus_leg': {
+        'id': 4000006,
+        'cn': '章鱼脚/章鱼腿 (三眼章鱼)',
+        'en': 'Octopus Leg',
+        'category': 'monster_drop',
+        'mob': 'octopus'
+    },
+    'blue_mushroom_cap': {
+        'id': 4000009,
+        'cn': '蓝蘑菇盖 (蓝蘑菇)',
+        'en': 'Blue Mushroom Cap',
+        'category': 'monster_drop',
+        'mob': 'blue_mushroom'
     }
 }
 

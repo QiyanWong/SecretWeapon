@@ -137,6 +137,15 @@ class DisconnectAlertDetector:
                 self.th, self.tw = self.text_tpl_gray.shape[:2]
                 print(f"[DisconnectAlertDetector] 成功载入【错误文本模板】: {self.text_path} ({self.tw}x{self.th})")
 
+        # 5. 预先生成多尺度全景模板缓存，避免每次调用重复 resize
+        self.cached_scaled_tpls = []
+        if self.dialog_tpl_gray is not None:
+            for scale in [0.85, 1.15, 0.9, 1.1, 1.25]:
+                sw, sh = int(self.dw * scale), int(self.dh * scale)
+                scaled_tpl = cv2.resize(self.dialog_tpl_gray, (sw, sh), interpolation=cv2.INTER_LINEAR)
+                scaled_half = cv2.resize(scaled_tpl, (0, 0), fx=0.5, fy=0.5)
+                self.cached_scaled_tpls.append((scale, sw, sh, scaled_half))
+
     def detect(self, bgr_frame):
         """
         全屏/游戏窗口多特征融合检索掉线弹窗
@@ -152,7 +161,7 @@ class DisconnectAlertDetector:
         # ================= 支路 A: 全景卷轴弹窗模板匹配 (金字塔降采样极速粗搜 + 原图精检) =================
         if self.dialog_tpl_gray is not None and self.dialog_tpl_half is not None:
             if gw >= self.dw and gh >= self.dh:
-                # 0.5x 降采样粗搜 (~2ms)
+                # 0.5x 降采样粗搜 (~1.5ms)
                 gray_half = cv2.resize(gray_frame, (0, 0), fx=0.5, fy=0.5)
                 res_half = cv2.matchTemplate(gray_half, self.dialog_tpl_half, cv2.TM_CCOEFF_NORMED)
                 _, max_val_half, _, max_loc_half = cv2.minMaxLoc(res_half)
@@ -175,63 +184,60 @@ class DisconnectAlertDetector:
                             match_boxes.append((real_x, real_y, self.dw, self.dh, float(max_val)))
                             return True, match_boxes
 
-                # 多尺度支持 (0.85x ~ 1.25x)
-                for scale in [0.85, 1.15, 0.9, 1.1, 1.25]:
-                    sw, sh = int(self.dw * scale), int(self.dh * scale)
-                    if sw >= gw or sh >= gh or sw < 80:
-                        continue
-                    scaled_tpl = cv2.resize(self.dialog_tpl_gray, (sw, sh), interpolation=cv2.INTER_LINEAR)
-                    scaled_half = cv2.resize(scaled_tpl, (0, 0), fx=0.5, fy=0.5)
-                    res_s = cv2.matchTemplate(gray_half, scaled_half, cv2.TM_CCOEFF_NORMED)
-                    _, max_v, _, max_l = cv2.minMaxLoc(res_s)
-                    if max_v >= (self.dialog_threshold - 0.05):
-                        rx = int(max_l[0] * 2)
-                        ry = int(max_l[1] * 2)
-                        match_boxes.append((rx, ry, sw, sh, float(max_v)))
-                        return True, match_boxes
+                # 仅当粗搜响应达到疑似度 (>= 0.45) 时才执行多尺度细搜，避免正常画面空转
+                if max_val_half >= 0.45:
+                    for scale, sw, sh, scaled_half in getattr(self, 'cached_scaled_tpls', []):
+                        if sw >= gw or sh >= gh or sw < 80:
+                            continue
+                        res_s = cv2.matchTemplate(gray_half, scaled_half, cv2.TM_CCOEFF_NORMED)
+                        _, max_v, _, max_l = cv2.minMaxLoc(res_s)
+                        if max_v >= (self.dialog_threshold - 0.05):
+                            rx = int(max_l[0] * 2)
+                            ry = int(max_l[1] * 2)
+                            match_boxes.append((rx, ry, sw, sh, float(max_v)))
+                            return True, match_boxes
 
-        # ================= 支路 B: 禁止蘑菇图标 + 确定按钮/文本几何相对位姿交叉核验 (双重保险) =================
-        if self.icon_tpl_gray is not None and (self.btn_tpl_gray is not None or self.text_tpl_gray is not None):
-            res_icon = cv2.matchTemplate(gray_frame, self.icon_tpl_gray, cv2.TM_CCOEFF_NORMED)
-            _, max_icon_val, _, icon_loc = cv2.minMaxLoc(res_icon)
+                    # ================= 支路 B: 禁止蘑菇图标 + 确定按钮/文本几何相对位姿交叉核验 (双重保险) =================
+                    if self.icon_tpl_gray is not None and (self.btn_tpl_gray is not None or self.text_tpl_gray is not None):
+                        res_icon = cv2.matchTemplate(gray_frame, self.icon_tpl_gray, cv2.TM_CCOEFF_NORMED)
+                        _, max_icon_val, _, icon_loc = cv2.minMaxLoc(res_icon)
 
-            if max_icon_val >= self.icon_threshold:
-                ix, iy = icon_loc
-                # 校验确定按钮 (在图标右下方: dx ~ 40~140, dy ~ 40~110)
-                verified = False
-                best_score = max_icon_val
+                        if max_icon_val >= self.icon_threshold:
+                            ix, iy = icon_loc
+                            verified = False
+                            best_score = max_icon_val
 
-                if self.btn_tpl_gray is not None:
-                    bx1, by1 = max(0, ix + 30), max(0, iy + 30)
-                    bx2, by2 = min(gw, ix + 200), min(gh, iy + 140)
-                    if bx2 - bx1 >= self.bw and by2 - by1 >= self.bh:
-                        btn_roi = gray_frame[by1:by2, bx1:bx2]
-                        res_btn = cv2.matchTemplate(btn_roi, self.btn_tpl_gray, cv2.TM_CCOEFF_NORMED)
-                        _, max_btn_val, _, _ = cv2.minMaxLoc(res_btn)
-                        if max_btn_val >= self.btn_threshold:
-                            verified = True
-                            best_score = (max_icon_val + max_btn_val) / 2.0
+                            if self.btn_tpl_gray is not None:
+                                bx1, by1 = max(0, ix + 30), max(0, iy + 30)
+                                bx2, by2 = min(gw, ix + 200), min(gh, iy + 140)
+                                if bx2 - bx1 >= self.bw and by2 - by1 >= self.bh:
+                                    btn_roi = gray_frame[by1:by2, bx1:bx2]
+                                    res_btn = cv2.matchTemplate(btn_roi, self.btn_tpl_gray, cv2.TM_CCOEFF_NORMED)
+                                    _, max_btn_val, _, _ = cv2.minMaxLoc(res_btn)
+                                    if max_btn_val >= self.btn_threshold:
+                                        verified = True
+                                        best_score = (max_icon_val + max_btn_val) / 2.0
 
-                # 若按钮未校验成功，尝试校验错误文本 (在图标右侧: dx ~ 20~160, dy ~ -20~40)
-                if not verified and self.text_tpl_gray is not None:
-                    tx1, ty1 = max(0, ix + 20), max(0, iy - 20)
-                    tx2, ty2 = min(gw, ix + 220), min(gh, iy + 60)
-                    if tx2 - tx1 >= self.tw and ty2 - ty1 >= self.th:
-                        text_roi = gray_frame[ty1:ty2, tx1:tx2]
-                        res_text = cv2.matchTemplate(text_roi, self.text_tpl_gray, cv2.TM_CCOEFF_NORMED)
-                        _, max_text_val, _, _ = cv2.minMaxLoc(res_text)
-                        if max_text_val >= self.text_threshold:
-                            verified = True
-                            best_score = (max_icon_val + max_text_val) / 2.0
+                            # 若按钮未校验成功，尝试校验错误文本 (在图标右侧: dx ~ 20~160, dy ~ -20~40)
+                            if not verified and self.text_tpl_gray is not None:
+                                tx1, ty1 = max(0, ix + 20), max(0, iy - 20)
+                                tx2, ty2 = min(gw, ix + 220), min(gh, iy + 60)
+                                if tx2 - tx1 >= self.tw and ty2 - ty1 >= self.th:
+                                    text_roi = gray_frame[ty1:ty2, tx1:tx2]
+                                    res_text = cv2.matchTemplate(text_roi, self.text_tpl_gray, cv2.TM_CCOEFF_NORMED)
+                                    _, max_text_val, _, _ = cv2.minMaxLoc(res_text)
+                                    if max_text_val >= self.text_threshold:
+                                        verified = True
+                                        best_score = (max_icon_val + max_text_val) / 2.0
 
-                if verified:
-                    # 综合估算整个弹窗边界 (以图标为基准，图标在弹窗约 (15, 35) 位置)
-                    est_x = max(0, ix - 15)
-                    est_y = max(0, iy - 35)
-                    est_w = self.dw if self.dw > 0 else 255
-                    est_h = self.dh if self.dh > 0 else 165
-                    match_boxes.append((est_x, est_y, est_w, est_h, float(best_score)))
-                    return True, match_boxes
+                            if verified:
+                                # 综合估算整个弹窗边界 (以图标为基准，图标在弹窗约 (15, 35) 位置)
+                                est_x = max(0, ix - 15)
+                                est_y = max(0, iy - 35)
+                                est_w = self.dw if self.dw > 0 else 255
+                                est_h = self.dh if self.dh > 0 else 165
+                                match_boxes.append((est_x, est_y, est_w, est_h, float(best_score)))
+                                return True, match_boxes
 
         return False, []
 

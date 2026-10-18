@@ -291,6 +291,15 @@ class CaptchaAlertDetector:
                 self.ih, self.iw = self.icon_tpl_gray.shape[:2]
                 print(f"[CaptchaAlertDetector] 成功载入【准星辅助模板】: {self.single_icon_path} (尺寸: {self.iw}x{self.ih})")
 
+        # 3. 预先生成多尺度全景模板缓存，避免每帧重复调用 cv2.resize
+        self.cached_scaled_tpls = []
+        if self.full_tpl_gray is not None:
+            for scale in [0.9, 1.1, 0.8, 1.25]:
+                sw, sh = int(self.fw * scale), int(self.fh * scale)
+                scaled_tpl = cv2.resize(self.full_tpl_gray, (sw, sh), interpolation=cv2.INTER_LINEAR)
+                scaled_half = cv2.resize(scaled_tpl, (0, 0), fx=0.5, fy=0.5)
+                self.cached_scaled_tpls.append((scale, sw, sh, scaled_half))
+
     def detect(self, bgr_frame):
         """
         全景多目标匹配检索
@@ -314,7 +323,7 @@ class CaptchaAlertDetector:
 
         # 2. 方案 A: 完整 3 连框全景模板金字塔匹配 (最优准确度，0 误判)
         if self.full_tpl_gray is not None:
-            # 先用 0.5x 降采样图做粗搜 (耗时 ~3ms)
+            # 先用 0.5x 降采样图做粗搜 (耗时 ~2-3ms)
             gray_half = cv2.resize(gray_frame, (0, 0), fx=0.5, fy=0.5)
             res_half = cv2.matchTemplate(gray_half, self.full_tpl_half, cv2.TM_CCOEFF_NORMED)
             _, max_val_half, _, max_loc_half = cv2.minMaxLoc(res_half)
@@ -337,32 +346,37 @@ class CaptchaAlertDetector:
                         match_boxes.append((real_x, real_y, self.fw, self.fh, float(max_val)))
                         return True, match_boxes
 
-            # 多尺度弥补 (应对窗口轻微非 1:1 缩放)
-            for scale in [0.9, 1.1, 0.8, 1.25]:
-                sw, sh = int(self.fw * scale), int(self.fh * scale)
-                if sw >= gw or sh >= gh or sw < 50:
-                    continue
-                scaled_tpl = cv2.resize(self.full_tpl_gray, (sw, sh), interpolation=cv2.INTER_LINEAR)
-                scaled_half = cv2.resize(scaled_tpl, (0, 0), fx=0.5, fy=0.5)
-                res_s = cv2.matchTemplate(gray_half, scaled_half, cv2.TM_CCOEFF_NORMED)
-                _, max_v, _, max_l = cv2.minMaxLoc(res_s)
-                if max_v >= self.match_threshold:
-                    rx = int(max_l[0] * 2)
-                    ry = int(max_l[1] * 2)
-                    match_boxes.append((rx, ry, sw, sh, float(max_v)))
-                    return True, match_boxes
+            # 仅当粗搜响应达到疑似度 (>= 0.38) 时才执行多尺度细搜与分支 B 准星匹配，彻底避免在正常画面空耗 CPU
+            if max_val_half >= 0.38:
+                # 多尺度弥补 (使用预先缓存的模板，零耗时 resize)
+                for scale, sw, sh, scaled_half in getattr(self, 'cached_scaled_tpls', []):
+                    if sw >= gw or sh >= gh or sw < 50:
+                        continue
+                    res_s = cv2.matchTemplate(gray_half, scaled_half, cv2.TM_CCOEFF_NORMED)
+                    _, max_v, _, max_l = cv2.minMaxLoc(res_s)
+                    if max_v >= self.match_threshold:
+                        rx = int(max_l[0] * 2)
+                        ry = int(max_l[1] * 2)
+                        match_boxes.append((rx, ry, sw, sh, float(max_v)))
+                        return True, match_boxes
 
-        # 3. 方案 B: 3 准星水平共线与等间距几何校验 (辅助双保险)
-        # 必须至少有 2~3 个准星在同一水平线 (Y 坐标相差 <= 8px) 且间距在 100~180px 之间
-        if self.icon_tpl_gray is not None:
-            res_icon = cv2.matchTemplate(gray_frame, self.icon_tpl_gray, cv2.TM_CCOEFF_NORMED)
-            locs = np.where(res_icon >= 0.78)
-            cand_pts = []
-            for pt in zip(*locs[::-1]):
-                if not any(abs(pt[0] - cp[0]) < 20 and abs(pt[1] - cp[1]) < 20 for cp in cand_pts):
-                    cand_pts.append(pt)
+                # 3. 方案 B: 3 准星水平共线与等间距几何校验 (辅助双保险)
+                if self.icon_tpl_gray is not None:
+                    res_icon = cv2.matchTemplate(gray_frame, self.icon_tpl_gray, cv2.TM_CCOEFF_NORMED)
+                    locs = np.where(res_icon >= 0.78)
+                    cand_pts = []
+                    for pt in zip(*locs[::-1]):
+                        if not any(abs(pt[0] - cp[0]) < 20 and abs(pt[1] - cp[1]) < 20 for cp in cand_pts):
+                            cand_pts.append(pt)
 
-            if len(cand_pts) >= 2:
+                    if len(cand_pts) >= 2:
+                        cand_pts.sort(key=lambda p: p[0])
+                        for i in range(len(cand_pts)):
+                            for j in range(i + 1, len(cand_pts)):
+                                p1, p2 = cand_pts[i], cand_pts[j]
+                                if abs(p1[1] - p2[1]) <= 10 and 90 <= abs(p2[0] - p1[0]) <= 190:
+                                    match_boxes.append((p1[0] - 10, p1[1] - 10, self.fw, self.fh, 0.85))
+                                    return True, match_boxes
                 # 检查水平共线性与等间距
                 cand_pts.sort(key=lambda p: p[0])
                 for i in range(len(cand_pts)):
