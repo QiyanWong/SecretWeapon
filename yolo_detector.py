@@ -202,6 +202,7 @@ class DetectorApp(QMainWindow):
         self.is_monitoring_preview = True
         self.is_detection_enabled = True
         self.is_bot_running = False
+        self.is_nav_test_active = False
         self.show_minimap_mask = False  # Debug 掩膜视界开关
         self.is_auto_screenshot = False
         self.screenshot_count = 0
@@ -277,6 +278,7 @@ class DetectorApp(QMainWindow):
             QPushButton#btnBotStart { background-color: #a6e3a1; color: #11111b; border: none; font-size: 14px; }
             QPushButton#btnBotStart:hover { background-color: #94e2d5; }
             QPushButton#btnBotStop { background-color: #f38ba8; color: #11111b; border: none; font-size: 14px; }
+            QPushButton#btnNavTestActive { background-color: #cba6f7; color: #11111b; border: none; font-size: 13px; font-weight: bold; }
             QPushButton#btnRecordOn { background-color: #f38ba8; color: #11111b; border: none; }
             QComboBox, QSpinBox, QDoubleSpinBox { background-color: #313244; border: 1px solid #45475a; border-radius: 6px; padding: 5px; color: #cdd6f4; }
             QTextEdit { background-color: #11111b; border: 1px solid #313244; border-radius: 6px; color: #a6adc8; font-family: "Consolas", monospace; font-size: 12px; }
@@ -411,7 +413,14 @@ class DetectorApp(QMainWindow):
         self.btn_auto_screenshot.setChecked(False)
         self.btn_auto_screenshot.clicked.connect(self.toggle_auto_screenshot)
 
+        self.btn_nav_test = QPushButton("🧪 导航纯测 (不打怪)")
+        self.btn_nav_test.setObjectName("btnNavTest")
+        self.btn_nav_test.setCheckable(True)
+        self.btn_nav_test.setToolTip("开启/关闭纯导航测试：不打怪，直接在标记的平台间循环移动、下跳与跳跃攀爬，用于调校起跳时机与检验导航成熟度。")
+        self.btn_nav_test.clicked.connect(self.toggle_nav_test)
+
         h_btn_group.addWidget(self.btn_bot, 2)
+        h_btn_group.addWidget(self.btn_nav_test, 2)
         h_btn_group.addWidget(self.btn_toggle_preview, 2)
         h_btn_group.addWidget(self.btn_toggle_detection, 2)
         h_btn_group.addWidget(self.btn_manual_screenshot, 2)
@@ -649,6 +658,45 @@ class DetectorApp(QMainWindow):
         h_layer_params.addWidget(self.sp_layer_max_dwell)
         map_nav_layout.addLayout(h_layer_params)
 
+        # 梯子跳跃攀爬实测距离控制行 (基于实测 861 绳子：左 818、右 914 起跳，835/887 按住 UP)
+        h_climb_timing = QHBoxLayout()
+        h_climb_timing.addWidget(QLabel("左起跳距:"))
+        self.sp_climb_launch_left = QSpinBox()
+        self.sp_climb_launch_left.setRange(10, 150)
+        self.sp_climb_launch_left.setValue(43)
+        self.sp_climb_launch_left.setSuffix(" px")
+        self.sp_climb_launch_left.setFixedWidth(62)
+        self.sp_climb_launch_left.setToolTip("左侧起跳点距梯中轴距离 (默认 43px，如梯子在 861 则在 818 起跳向右横飞)")
+        h_climb_timing.addWidget(self.sp_climb_launch_left)
+
+        h_climb_timing.addWidget(QLabel("右起跳距:"))
+        self.sp_climb_launch_right = QSpinBox()
+        self.sp_climb_launch_right.setRange(10, 150)
+        self.sp_climb_launch_right.setValue(53)
+        self.sp_climb_launch_right.setSuffix(" px")
+        self.sp_climb_launch_right.setFixedWidth(62)
+        self.sp_climb_launch_right.setToolTip("右侧起跳点距梯中轴距离 (默认 53px，如梯子在 861 则在 914 起跳向左横飞)")
+        h_climb_timing.addWidget(self.sp_climb_launch_right)
+
+        h_climb_timing.addWidget(QLabel("按UP距梯:"))
+        self.sp_climb_up_dist = QSpinBox()
+        self.sp_climb_up_dist.setRange(5, 80)
+        self.sp_climb_up_dist.setValue(26)
+        self.sp_climb_up_dist.setSuffix(" px")
+        self.sp_climb_up_dist.setFixedWidth(62)
+        self.sp_climb_up_dist.setToolTip("角色横跳中实时坐标距梯子达到该像素时立刻按住 UP 键攀爬 (默认 26px，如梯子在 861 则飞行至 835/887 左右按住 UP)")
+        h_climb_timing.addWidget(self.sp_climb_up_dist)
+
+        h_climb_timing.addWidget(QLabel("空中方向按住:"))
+        self.sp_climb_dir_hold = QSpinBox()
+        self.sp_climb_dir_hold.setRange(100, 800)
+        self.sp_climb_dir_hold.setValue(450)
+        self.sp_climb_dir_hold.setSuffix(" ms")
+        self.sp_climb_dir_hold.setFixedWidth(68)
+        self.sp_climb_dir_hold.setToolTip("起跳后在空中保持按住方向键的最长时间 (默认 450ms)。确保在空中拥有足够的水平飞行距离到达梯子。")
+        h_climb_timing.addWidget(self.sp_climb_dir_hold)
+        map_nav_layout.addLayout(h_climb_timing)
+
         h_platform = QHBoxLayout()
         self.chk_platform_patrol = QCheckBox("🛡️ 平台安全区防跌落 (常开)")
         self.chk_platform_patrol.setChecked(True)
@@ -684,10 +732,10 @@ class DetectorApp(QMainWindow):
         h_map_select = QHBoxLayout()
         h_map_select.addWidget(QLabel("地图 XML:"))
         self.cb_map_xml = QComboBox()
-        self.cb_map_xml.setEnabled(False)
+        self.cb_map_xml.setEnabled(True)
         self.cb_map_xml.currentIndexChanged.connect(self.on_map_xml_changed)
         self.btn_refresh_maps = QPushButton("🔄 刷新地图")
-        self.btn_refresh_maps.setEnabled(False)
+        self.btn_refresh_maps.setEnabled(True)
         self.btn_refresh_maps.clicked.connect(self.refresh_map_xml_list)
         
         h_map_select.addWidget(self.cb_map_xml, 3)
@@ -1048,6 +1096,7 @@ class DetectorApp(QMainWindow):
         h_buff_header.addWidget(self.btn_add_buff)
 
         self.btn_save_combat_cfg = QPushButton("💾 保存技能配置")
+        self.btn_save_combat_cfg.setToolTip("保存当前攻击/Buff技能配置、自动加血蓝按键阈值以及选中的地图XML至本地配置")
         self.btn_save_combat_cfg.clicked.connect(self.save_combat_config)
         h_buff_header.addWidget(self.btn_save_combat_cfg)
 
@@ -1074,9 +1123,9 @@ class DetectorApp(QMainWindow):
         mid_scroll.setWidget(mid_panel)
         mid_scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
 
-        # 载入或初始化默认 Buff 项与地图列表配置
-        self.load_combat_config()
+        # 载入或初始化默认 Buff 项与地图列表配置 (先扫描填充地图列表，再载入配置恢复选中地图与按键)
         self.refresh_map_xml_list()
+        self.load_combat_config()
 
         # Splitter 2 栏水平响应式分割面板 (左:主画面与目标识别 | 右:小地图与战斗策略)
         splitter.addWidget(left_panel)
@@ -1602,6 +1651,11 @@ class DetectorApp(QMainWindow):
             self.btn_bot.setText("⚡ 开始打怪")
             self.btn_bot.setObjectName("btnBotStart")
             self.btn_bot.setStyle(self.btn_bot.style())
+            if getattr(self, "is_nav_test_active", False):
+                self.is_nav_test_active = False
+                self.btn_nav_test.setText("🧪 导航纯测 (不打怪)")
+                self.btn_nav_test.setObjectName("")
+                self.btn_nav_test.setStyle(self.btn_nav_test.style())
             self.decision_engine.reset()
             self.game_controller.release_all_keys()
 
@@ -1622,6 +1676,34 @@ class DetectorApp(QMainWindow):
                 self.disconnect_detector.restore_volume()
 
             self.log("【打怪总开关】已停止打怪。")
+
+    def toggle_nav_test(self):
+        """
+        一键开启/停止纯导航测试模式:
+        自动激活高级地图 XML 导航，只进行平台间巡逻、下跳与跳跃攀爬，完全不打怪，专供测试跳跃攀爬时机与巡航路线。
+        """
+        self.is_nav_test_active = not getattr(self, "is_nav_test_active", False)
+        if self.is_nav_test_active:
+            self.btn_nav_test.setText("⏹️ 停止纯测")
+            self.btn_nav_test.setObjectName("btnNavTestActive")
+            self.btn_nav_test.setStyle(self.btn_nav_test.style())
+            if not self.chk_advanced_nav.isChecked():
+                self.chk_advanced_nav.setChecked(True)
+            if not self.is_bot_running:
+                self.toggle_bot()
+            self.log("🧪 【导航纯测】纯导航测试模式已启动！(不攻击怪物，专供验证跨层移动与跳跃攀爬时机)")
+        else:
+            self.btn_nav_test.setText("🧪 导航纯测 (不打怪)")
+            self.btn_nav_test.setObjectName("")
+            self.btn_nav_test.setStyle(self.btn_nav_test.style())
+            if self.is_bot_running:
+                self.toggle_bot()
+            self.log("🧪 【导航纯测】纯导航测试模式已停止。")
+
+    def start_nav_test_mode(self):
+        """CLI 或外部快捷启动专用入口"""
+        if not getattr(self, "is_nav_test_active", False):
+            self.toggle_nav_test()
 
     def toggle_route_recording(self):
         self.route_manager.is_recording = not self.route_manager.is_recording
@@ -1667,8 +1749,6 @@ class DetectorApp(QMainWindow):
         """平台打怪模式切换"""
         self.decision_engine.enable_platform_patrol = checked
         if checked:
-            self.cb_map_xml.setEnabled(True)
-            self.btn_refresh_maps.setEnabled(True)
             xml_path = self.cb_map_xml.currentData()
             if xml_path and os.path.exists(xml_path):
                 if not self.decision_engine.map_parser:
@@ -1681,9 +1761,6 @@ class DetectorApp(QMainWindow):
         else:
             self.decision_engine.current_platform_bounds = None
             self.decision_engine.current_platform_fhs = []
-            if not self.chk_advanced_nav.isChecked():
-                self.cb_map_xml.setEnabled(False)
-                self.btn_refresh_maps.setEnabled(False)
             self.log("🛡️ 【模式切换】已退出 平台打怪 模式")
 
     def on_platform_margin_changed(self):
@@ -1707,8 +1784,6 @@ class DetectorApp(QMainWindow):
     def on_nav_mode_toggled(self, checked):
         """高级地图 XML 寻路与传统路线录制模式自由切换"""
         if checked:
-            self.cb_map_xml.setEnabled(True)
-            self.btn_refresh_maps.setEnabled(True)
             xml_path = self.cb_map_xml.currentData()
             if xml_path and os.path.exists(xml_path):
                 if not self.decision_engine.map_parser:
@@ -1719,9 +1794,8 @@ class DetectorApp(QMainWindow):
             else:
                 self.log("【提示】未找到有效的地图 XML，请先在 /map 文件夹中放入解包数据")
         else:
-            if not self.chk_platform_patrol.isChecked():
-                self.cb_map_xml.setEnabled(False)
-                self.btn_refresh_maps.setEnabled(False)
+            if getattr(self.decision_engine, "navigator", None):
+                self.decision_engine.navigator.reset_session()
             self.log("【模式切换】已切回 🚶 传统按键录制巡逻模式 (F1~F4 路线)")
 
     def on_map_xml_changed(self, index):
@@ -1920,6 +1994,9 @@ class DetectorApp(QMainWindow):
                     "checked": item["chk"].isChecked()
                 })
             
+            cur_map_path = self.cb_map_xml.currentData()
+            cur_map_xml = os.path.basename(cur_map_path) if cur_map_path else ""
+
             cfg = {
                 "normal_atk_key": self.txt_normal_key.text().strip(),
                 "normal_atk_range": self.sp_normal_range.value(),
@@ -1948,6 +2025,7 @@ class DetectorApp(QMainWindow):
                 "mp_threshold": self.sp_mp_thresh.value(),
                 "mp_key": self.cb_key_mp.currentText().strip(),
                 "mp_cooldown": float(self.sp_mp_cd.value()),
+                "map_xml": cur_map_xml,
                 "buffs": buffs_data
             }
 
@@ -1956,7 +2034,8 @@ class DetectorApp(QMainWindow):
             with open(DEFAULT_COMBAT_CONFIG_PATH, "w", encoding="utf-8") as f:
                 json.dump(cfg, f, ensure_ascii=False, indent=2)
 
-            self.log(f"【战斗与策略配置】成功保存攻击、Buff与策略配置至 {DEFAULT_COMBAT_CONFIG_PATH}")
+            map_desc = f"地图XML: {cur_map_xml}" if cur_map_xml else "地图XML: 未选"
+            self.log(f"【战斗与策略配置】成功保存攻击、Buff、加血加蓝按键与{map_desc}至 {DEFAULT_COMBAT_CONFIG_PATH}")
         except Exception as e:
             self.log(f"【技能配置保存失败】: {e}")
 
@@ -1977,7 +2056,7 @@ class DetectorApp(QMainWindow):
             self.log(f"【怪物优先级】打开配置文件失败: {e}")
 
     def load_combat_config(self):
-        """从 JSON 文件载入攻击与 Buff 技能配置"""
+        """从 JSON 文件载入攻击、Buff、加血加蓝按键与地图 XML 配置"""
         if not os.path.exists(DEFAULT_COMBAT_CONFIG_PATH):
             self.add_buff_item_row("1", 180)
             self.add_buff_item_row("2", 180)
@@ -2040,7 +2119,12 @@ class DetectorApp(QMainWindow):
             if "hp_threshold" in cfg:
                 self.sp_hp_thresh.setValue(int(cfg["hp_threshold"]))
             if "hp_key" in cfg:
-                self.cb_key_hp.setCurrentText(str(cfg["hp_key"]))
+                hp_k = str(cfg["hp_key"]).strip()
+                idx = self.cb_key_hp.findText(hp_k, Qt.MatchFixedString)
+                if idx >= 0:
+                    self.cb_key_hp.setCurrentIndex(idx)
+                else:
+                    self.cb_key_hp.setEditText(hp_k)
             if "hp_cooldown" in cfg:
                 self.sp_hp_cd.setValue(float(cfg["hp_cooldown"]))
 
@@ -2049,11 +2133,32 @@ class DetectorApp(QMainWindow):
             if "mp_threshold" in cfg:
                 self.sp_mp_thresh.setValue(int(cfg["mp_threshold"]))
             if "mp_key" in cfg:
-                self.cb_key_mp.setCurrentText(str(cfg["mp_key"]))
+                mp_k = str(cfg["mp_key"]).strip()
+                idx = self.cb_key_mp.findText(mp_k, Qt.MatchFixedString)
+                if idx >= 0:
+                    self.cb_key_mp.setCurrentIndex(idx)
+                else:
+                    self.cb_key_mp.setEditText(mp_k)
             if "mp_cooldown" in cfg:
                 self.sp_mp_cd.setValue(float(cfg["mp_cooldown"]))
 
             self.sync_potion_config()
+
+            # 恢复历史保存的地图 XML 选择
+            saved_map_xml = cfg.get("map_xml", "").strip()
+            if saved_map_xml and self.cb_map_xml.count() > 0:
+                target_idx = -1
+                for i in range(self.cb_map_xml.count()):
+                    d_path = self.cb_map_xml.itemData(i)
+                    if d_path and os.path.basename(d_path) == saved_map_xml:
+                        target_idx = i
+                        break
+                if target_idx >= 0:
+                    if self.cb_map_xml.currentIndex() != target_idx:
+                        self.cb_map_xml.setCurrentIndex(target_idx)
+                    else:
+                        self.on_map_xml_changed(target_idx)
+                    self.log(f"【地图配置】已自动恢复选中的地图 XML: {saved_map_xml}")
 
             buffs_data = cfg.get("buffs", [])
             if buffs_data:
@@ -2338,6 +2443,7 @@ class DetectorApp(QMainWindow):
                     px, py = self.player_map_pos
                     curr_target = self.route_manager.get_current_target_node()
                     next_target = self.route_manager.get_current_next_node()
+                    seg_str = f" [当前段: P{curr_target.node_id}->P{next_target.node_id}]" if (curr_target and next_target and self.route_manager.nodes) else ""
                     self.log(f"【小地图定位】玩家小地图坐标: ({px}, {py}) | 置信度: {conf_score:.2f}{seg_str}")
                 else:
                     self.log(f"【小地图定位】未匹配到玩家图标 (最高得分: {conf_score:.2f} < 0.70)")
@@ -2365,21 +2471,22 @@ class DetectorApp(QMainWindow):
                         fh_str = f"FH #{cur_fh.id} (Y={cur_fh.get_y_at_x(xw):.0f})" if cur_fh else "悬空/未吸附"
 
                         nav = getattr(self.decision_engine, "navigator", None)
-                        if nav:
+                        pb = getattr(self.decision_engine, "current_platform_bounds", None)
+                        ml = self.sp_danger_margin_left.value()
+                        mr = self.sp_danger_margin_right.value()
+                        if not pb and cur_fh:
+                            pb = self.decision_engine.get_platform_info(xw, yw, danger_margin_left=ml, danger_margin_right=mr)
+                        safe_str = f"安全区:[{pb[3]:.0f}~{pb[4]:.0f}]" if pb else "安全区:计算中"
+                        esc_str = " ⚠️正在避险回撤" if getattr(self.decision_engine, "is_escaping_platform_danger", False) else ""
+
+                        if nav and self.chk_advanced_nav.isChecked():
                             cur_p = nav.graph.locate(xw, yw)
                             p_desc = f"平台 L{cur_p.id}" if cur_p else "未知层"
                             marked_info = f"{len(nav.marked)}层标记" if nav.marked else "单层打怪"
-                            
-                            pb = getattr(self.decision_engine, "current_platform_bounds", None)
-                            ml = self.sp_danger_margin_left.value()
-                            mr = self.sp_danger_margin_right.value()
-                            if not pb and cur_fh:
-                                pb = self.decision_engine.get_platform_info(xw, yw, danger_margin_left=ml, danger_margin_right=mr)
-                            safe_str = f"安全区:[{pb[3]:.0f}~{pb[4]:.0f}]" if pb else "安全区:计算中"
-                            esc_str = " ⚠️正在避险回撤" if getattr(self.decision_engine, "is_escaping_platform_danger", False) else ""
                             self.log(f"【🗺️ 多层导航】世界:({xw:.0f},{yw:.0f}) | 当前:{p_desc}({fh_str}) | 状态:{nav.status} | {safe_str} ({marked_info}){esc_str}")
                         else:
-                            self.log(f"【🗺️ 导航监控】世界:({xw:.0f},{yw:.0f}) | 所在:{fh_str}")
+                            p_desc = f"平台 FH#{cur_fh.id}" if cur_fh else "悬空"
+                            self.log(f"【🛡️ 平台打怪】世界:({xw:.0f},{yw:.0f}) | 所在:{p_desc}({fh_str}) | {safe_str}{esc_str}")
 
             # 渲染到 lbl_minimap_display (增加尺寸保护与缩放加速)
             mlbl_w = self.lbl_minimap_display.width()
@@ -2611,7 +2718,12 @@ class DetectorApp(QMainWindow):
                 "crop_w": self.sp_crop_w.value(),
                 "crop_h": self.sp_crop_h.value(),
                 "turns_per_layer": self.sp_turns_per_layer.value(),
-                "max_layer_dwell": float(self.sp_layer_max_dwell.value())
+                "max_layer_dwell": float(self.sp_layer_max_dwell.value()),
+                "climb_launch_dist_left": self.sp_climb_launch_left.value() if hasattr(self, 'sp_climb_launch_left') else 43,
+                "climb_launch_dist_right": self.sp_climb_launch_right.value() if hasattr(self, 'sp_climb_launch_right') else 53,
+                "climb_up_dist": self.sp_climb_up_dist.value() if hasattr(self, 'sp_climb_up_dist') else 26,
+                "climb_dir_hold_ms": self.sp_climb_dir_hold.value() if hasattr(self, 'sp_climb_dir_hold') else 450,
+                "nav_test_mode": getattr(self, "is_nav_test_active", False)
             }
                 
             # 执行决策
@@ -2697,4 +2809,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = DetectorApp()
     window.show()
+    if "--nav-test" in sys.argv:
+        QTimer.singleShot(1500, window.start_nav_test_mode)
     sys.exit(app.exec_())

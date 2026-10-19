@@ -26,6 +26,7 @@
   "mp_threshold": 40,
   "mp_key": "PageDown",
   "mp_cooldown": 0.6,
+  "map_xml": "",
   "buffs": [
     {
       "key": "h",

@@ -340,8 +340,9 @@ class MinimapTracker:
                 if 0 <= x1_m < cw or 0 <= x2_m < cw or min(x1_m, x2_m) <= cw // 2 <= max(x1_m, x2_m):
                     cv2.line(canvas, (x1_m, y1_m), (x2_m, y2_m), (60, 180, 60), 1, cv2.LINE_AA)
 
-            # (1.5) 高亮用户标记的打怪平台 (金黄色粗线)
+            # (1.5) 高亮用户标记的打怪平台 (金黄色粗线) 与仅在标记层显示的跳跃攀爬区 (青色 JUMP)
             if nav and nav.marked:
+                from layer_navigator import LadderClimber
                 for mid in nav.marked:
                     mp_plat = nav.graph.platforms.get(mid)
                     if mp_plat:
@@ -359,6 +360,58 @@ class MinimapTracker:
                         cv2.circle(canvas, (dx_m, dy_m), 3, (0, 165, 255), -1)
                         cv2.putText(canvas, "v", (dx_m - 3, dy_m + 6),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.28, (0, 165, 255), 1)
+
+                        # 🌟 需求 1 & 2: 仅在被标记的平台上显示跳跃区 (如 818 与 914) 以及空中按 UP 判定线 (如 835 与 887)
+                        drawn_ladders = set()
+                        for edge in nav.graph.edges_from.get(mid, []):
+                            if edge.kind == "CLIMB" and edge.ladder:
+                                lr_id = getattr(edge.ladder, "id", None)
+                                if lr_id is not None and lr_id in drawn_ladders:
+                                    continue
+                                if lr_id is not None:
+                                    drawn_ladders.add(lr_id)
+                                
+                                jz = LadderClimber.get_jump_zone(mp_plat, edge.ladder)
+                                # 1. 绘制左起跳区 (例如 818 附近朝右起跳)
+                                if jz["can_left"] and jz["left_zone"]:
+                                    zx1, zx2 = jz["left_zone"]
+                                    zy = mp_plat.y_at(jz["left_target"]) or mp_plat.avg_y
+                                    m1, my1 = mp.world_to_minimap(zx1, zy, crop_w=cw, crop_h=ch)
+                                    m2, my2 = mp.world_to_minimap(zx2, zy, crop_w=cw, crop_h=ch)
+                                    if m1 > m2: m1, m2 = m2, m1
+                                    cv2.line(canvas, (m1, my1), (m2, my2), (255, 255, 0), 2, cv2.LINE_AA)
+                                    cv2.line(canvas, (m1, my1 - 3), (m1, my1 + 3), (255, 255, 0), 1)
+                                    cv2.line(canvas, (m2, my2 - 3), (m2, my2 + 3), (255, 255, 0), 1)
+                                    lbl_x = max(0, min(cw - 24, (m1 + m2) // 2 - 8))
+                                    cv2.putText(canvas, f"{jz['left_target']:.0f}>", (lbl_x, max(10, my1 - 3)),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.22, (255, 255, 0), 1)
+
+                                # 2. 绘制右起跳区 (例如 914 附近朝左起跳)
+                                if jz["can_right"] and jz["right_zone"]:
+                                    zx1, zx2 = jz["right_zone"]
+                                    zy = mp_plat.y_at(jz["right_target"]) or mp_plat.avg_y
+                                    m1, my1 = mp.world_to_minimap(zx1, zy, crop_w=cw, crop_h=ch)
+                                    m2, my2 = mp.world_to_minimap(zx2, zy, crop_w=cw, crop_h=ch)
+                                    if m1 > m2: m1, m2 = m2, m1
+                                    cv2.line(canvas, (m1, my1), (m2, my2), (255, 255, 0), 2, cv2.LINE_AA)
+                                    cv2.line(canvas, (m1, my1 - 3), (m1, my1 + 3), (255, 255, 0), 1)
+                                    cv2.line(canvas, (m2, my2 - 3), (m2, my2 + 3), (255, 255, 0), 1)
+                                    lbl_x = max(0, min(cw - 24, (m1 + m2) // 2 - 8))
+                                    cv2.putText(canvas, f"<{jz['right_target']:.0f}", (lbl_x, max(10, my1 - 3)),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.22, (255, 255, 0), 1)
+
+                                # 3. 绘制空中按住 UP 触发线 (在平台上方 6px 处以黄绿色小圆点标示，如 835 与 887)
+                                up_dist = 26
+                                up_l = edge.ladder.x - up_dist
+                                up_r = edge.ladder.x + up_dist
+                                zy_up = mp_plat.avg_y - 6
+                                ul_m, uly_m = mp.world_to_minimap(up_l, zy_up, crop_w=cw, crop_h=ch)
+                                ur_m, ury_m = mp.world_to_minimap(up_r, zy_up, crop_w=cw, crop_h=ch)
+                                if 0 <= ul_m < cw and 0 <= ur_m < cw:
+                                    cv2.circle(canvas, (ul_m, uly_m), 2, (100, 255, 100), -1)
+                                    cv2.circle(canvas, (ur_m, ury_m), 2, (100, 255, 100), -1)
+                                    cv2.putText(canvas, "UP", ((ul_m + ur_m) // 2 - 4, max(8, uly_m - 2)),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.20, (100, 255, 100), 1)
 
             # (2) 绘制全图梯子/绳索 (LadderRopes)
             for lr in mp.ladder_ropes:

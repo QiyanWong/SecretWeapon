@@ -24,6 +24,7 @@ import heapq
 import json
 import math
 import os
+import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROFILE_DIR = os.path.join(BASE_DIR, "dataset", "map_profiles")
@@ -40,7 +41,10 @@ class NavContext:
     """每帧传入导航器的感知数据"""
     def __init__(self, now, mx, my, xw, yw, jump_key="Alt",
                  margin_left=150, margin_right=150, crop_w=None, crop_h=None,
-                 turns_per_layer=1, max_dwell=25.0):
+                 turns_per_layer=1, max_dwell=25.0,
+                 climb_launch_dist_left=43, climb_launch_dist_right=53,
+                 climb_up_dist=26, climb_dir_hold_ms=450, nav_test_mode=False,
+                 jump_vx=135.0, climb_timing_bias=0.0):
         self.now = now
         self.mx = int(mx)            # 小地图像素 X (运动学判定用，原始传感器数据)
         self.my = int(my)            # 小地图像素 Y
@@ -53,6 +57,13 @@ class NavContext:
         self.crop_h = crop_h
         self.turns_per_layer = turns_per_layer
         self.max_dwell = max_dwell
+        self.climb_launch_dist_left = climb_launch_dist_left
+        self.climb_launch_dist_right = climb_launch_dist_right
+        self.climb_up_dist = climb_up_dist
+        self.climb_dir_hold_ms = climb_dir_hold_ms
+        self.nav_test_mode = nav_test_mode
+        self.jump_vx = jump_vx
+        self.climb_timing_bias = climb_timing_bias
 
 
 # ============================================================================
@@ -363,7 +374,7 @@ class LadderClimber:
     """
     APPROACH_TIMEOUT = 8.0  # 跑向起跳点的最长时间
     SWEEP_AIRTIME = 0.70    # 跳跃最长滞空时间
-    DIR_HOLD_TIME = 0.12    # 起跳后维持水平方向的时长 (赋予水平惯性)
+    DIR_HOLD_TIME = 0.45    # 起跳后维持水平方向的时长 (赋予充分水平惯性横移至梯子)
     STALL_TIME = 0.6        # 按住 UP 纵坐标不变超过此时间 => 到顶
     TOP_HOLD = 0.35         # 到顶后继续按 UP 让角色翻上平台
     PROBE_TIME = 0.35       # 横向探针: 按方向键的时长
@@ -420,7 +431,7 @@ class LadderClimber:
         return FAIL
 
     def describe(self):
-        if self.state in ("APPROACH", "SWEEP_JUMP", "SWEEP_WAIT"):
+        if self.state in ("APPROACH", "SWEEP_JUMP", "SWEEP_WAIT", "LAND_SETTLE"):
             s_dir = f"[{self.sweep_dir}]" if self.sweep_dir else ""
             return f"扫梯[{self.state}{s_dir}] lr{self.lr.id} 尝试={self.attempt+1}"
         return f"爬梯[{self.state}] lr{self.lr.id}({self.edge.exit_mode}) 尝试={self.attempt+1}"
@@ -431,64 +442,87 @@ class LadderClimber:
             self.t_state = c.now
         return getattr(self, "_st_" + self.state.lower())(c)
 
-    def _plan_launch(self, c):
-        bottom = self.nav.graph.platforms[self.edge.src]
-        sl, sr = bottom.safe_bounds(c.ml, c.mr)
-        lx = self.lr.x
+    @classmethod
+    def get_jump_zone(cls, plat, lr, launch_left=43, launch_right=53, tol=5):
+        """
+        根据实测数据计算平台 plat 上针对梯子 lr 的精确跳跃区世界 X 范围:
+        - 左起跳点: lr.x - launch_left (例如 861 - 43 = 818)
+          左跳跃区: [lr.x - launch_left - tol, lr.x - launch_left + tol] -> 朝向 RIGHT 起跳
+        - 右起跳点: lr.x + launch_right (例如 861 + 53 = 914)
+          右跳跃区: [lr.x + launch_right - tol, lr.x + launch_right + tol] -> 朝向 LEFT 起跳
+        """
+        left_target = lr.x - launch_left
+        right_target = lr.x + launch_right
 
-        # 尝试重试时围绕 30px 微幅轮换起跳距离 (30 -> 24 -> 38 -> 20 -> 42)
-        dist_mods = [0, -6, +8, -10, +12]
-        cur_dist = max(18, self.BASE_LAUNCH_DIST + dist_mods[self.attempt % len(dist_mods)])
+        left_min = left_target - tol
+        left_max = left_target + tol
+        right_min = right_target - tol
+        right_max = right_target + tol
 
-        can_left = (lx - cur_dist) >= sl
-        can_right = (lx + cur_dist) <= sr
+        can_left = (plat.x_min + 5 <= left_target <= plat.x_max - 5)
+        can_right = (plat.x_min + 5 <= right_target <= plat.x_max - 5)
 
-        # 优先朝向梯子起跳
-        if c.xw <= lx:
-            if can_left:
-                return (lx - cur_dist, "RIGHT", cur_dist)
-            elif can_right:
-                return (lx + cur_dist, "LEFT", cur_dist)
-        else:
-            if can_right:
-                return (lx + cur_dist, "LEFT", cur_dist)
-            elif can_left:
-                return (lx - cur_dist, "RIGHT", cur_dist)
-
-        if can_left:
-            return (lx - cur_dist, "RIGHT", cur_dist)
-        elif can_right:
-            return (lx + cur_dist, "LEFT", cur_dist)
-        else:
-            # 极窄平台自适应 (上限 30px)
-            left_room = abs(lx - sl)
-            right_room = abs(sr - lx)
-            if left_room >= right_room:
-                d = max(18, min(30, int(left_room * 0.8)))
-                return (lx - d, "RIGHT", d)
-            else:
-                d = max(18, min(30, int(right_room * 0.8)))
-                return (lx + d, "LEFT", d)
+        return {
+            "can_left": can_left,
+            "left_target": left_target,
+            "left_zone": (left_min, left_max) if can_left else None,
+            "can_right": can_right,
+            "right_target": right_target,
+            "right_zone": (right_min, right_max) if can_right else None,
+            "full_min": left_min if can_left else right_min,
+            "full_max": right_max if can_right else left_max
+        }
 
     def _st_approach(self, c):
         if c.now - self.t_state > self.APPROACH_TIMEOUT:
             return self._fail("走向起跳点超时")
 
-        launch_x, sweep_dir, dist = self._plan_launch(c)
-        self.launch_x = launch_x
-        self.sweep_dir = sweep_dir
+        bottom = self.nav.graph.platforms[self.edge.src]
+        launch_l = int(getattr(c, "climb_launch_dist_left", 43))
+        launch_r = int(getattr(c, "climb_launch_dist_right", 53))
+        jz = self.get_jump_zone(bottom, self.lr, launch_left=launch_l, launch_right=launch_r)
 
-        dx = launch_x - c.xw
-        dist_to_ladder = abs(self.lr.x - c.xw)
-        is_between = (sweep_dir == "RIGHT" and launch_x <= c.xw <= self.lr.x) or \
-                     (sweep_dir == "LEFT" and self.lr.x <= c.xw <= launch_x)
+        in_left_zone = (jz["can_left"] and jz["left_zone"] is not None and jz["left_zone"][0] <= c.xw <= jz["left_zone"][1])
+        in_right_zone = (jz["can_right"] and jz["right_zone"] is not None and jz["right_zone"][0] <= c.xw <= jz["right_zone"][1])
 
-        # 接近起跳点 (收紧容差至 12px，确保起跳距梯子在 30px 左右) 或在梯子与起跳点之间且距离梯子充足，立即发起横跳
-        if abs(dx) <= 12 or (is_between and dist_to_ladder >= 20):
+        # 核心需求："而在914和818位置之外就不起跳"
+        # 1. 只有当玩家精准处于左跳跃区 (如 818 附近) 或右跳跃区 (如 914 附近) 时，才触发起跳！
+        if in_left_zone:
+            self.sweep_dir = "RIGHT"
+            return self._start_sweep_jump(c)
+        elif in_right_zone:
+            self.sweep_dir = "LEFT"
             return self._start_sweep_jump(c)
 
-        d = "RIGHT" if dx > 0 else "LEFT"
-        self._hold(d)
+        # 2. 不在跳跃区内：必须继续向目标起跳点走位，绝对不起跳！
+        # 判定走位目标：
+        # Case A: 玩家处于左侧 (c.xw < jz["left_target"]) -> 向右走去 818
+        if jz["can_left"] and c.xw < jz["left_target"]:
+            self._hold("RIGHT")
+            return RUNNING
+
+        # Case B: 玩家处于右侧 (c.xw > jz["right_target"]) -> 向左走去 914
+        if jz["can_right"] and c.xw > jz["right_target"]:
+            self._hold("LEFT")
+            return RUNNING
+
+        # Case C: 玩家处于中间 (在 818 和 914 之间，但未落入起跳区)
+        # 优先选择离当前更近且合法的起跳点拉开身位
+        target_x = None
+        if jz["can_left"] and jz["can_right"]:
+            if abs(c.xw - jz["left_target"]) <= abs(c.xw - jz["right_target"]):
+                target_x = jz["left_target"]
+            else:
+                target_x = jz["right_target"]
+        elif jz["can_left"]:
+            target_x = jz["left_target"]
+        elif jz["can_right"]:
+            target_x = jz["right_target"]
+        else:
+            target_x = self.lr.x
+
+        walk_dir = "RIGHT" if target_x > c.xw else "LEFT"
+        self._hold(walk_dir)
         return RUNNING
 
     def _start_sweep_jump(self, c):
@@ -498,22 +532,62 @@ class LadderClimber:
         self.min_air_my = c.my
         self.min_air_yw = c.yw
 
-        # 1. 明确朝向梯子
+        dist = abs(self.lr.x - c.xw)
+        
+        # 核心需求：在 835 左右按住上键 (以 861 绳子为例，861 - 835 = 26px)
+        up_dist = int(getattr(c, "climb_up_dist", 26))
+        if self.sweep_dir == "RIGHT":
+            self.up_trigger_x = self.lr.x - up_dist   # 如 861 - 26 = 835
+        else:
+            self.up_trigger_x = self.lr.x + up_dist   # 如 861 + 26 = 887
+
+        self.up_pressed = False
+        self.up_pressed_at = 0.0
+
+        # 1. 明确按住朝向梯子的方向键 (释放反方向)
+        # 判定是否发生折返掉头：如果刚才正在反向走位拉开距离，需要更充分的掉头加速时间建立同向动量
+        is_turnaround = bool(self.holding and self.holding != self.sweep_dir)
         self._hold(self.sweep_dir)
-        # 2. 按住 UP 键 (滞空扫过梯子抓梯核心)
-        self.gc.press_key("UP")
-        # 3. 点按跳跃
+        # 助跑缓冲：掉头转向需 140ms 彻底消除反向滑步并建立正向初速度，同向跑动保留 80ms 确保游戏引擎进入 run 状态
+        runup_delay = 0.14 if is_turnaround else 0.08
+        time.sleep(runup_delay)
+
+        # 2. 触发起跳按键 (只跳，方向键绝不松开，绝不在地面按下 UP)
         self.gc.tap_key(c.jump_key, 0.08)
 
-        print(f"🪜 [横跳扫梯] 发起横跳! 起跳X={c.xw:.0f}, 梯子X={self.lr.x}, 距梯={abs(self.lr.x - c.xw):.0f}px | 朝向={self.sweep_dir} + UP + 跳跃")
+        print(f"🪜 [横跳扫梯] 起跳! 起跳X={c.xw:.0f}, 梯子X={self.lr.x}, 距梯={dist:.0f}px (朝向={self.sweep_dir}, 转向={is_turnaround}) | 目标按UP坐标: X={self.up_trigger_x:.0f} (距梯={up_dist}px)")
         self._enter("SWEEP_WAIT", c.now)
         return RUNNING
 
     def _st_sweep_wait(self, c):
         el = c.now - self.t_state
 
-        # 起跳 120ms 后松开水平方向，靠惯性前进，防止抓梯后误按方向脱离梯子
-        if el >= self.DIR_HOLD_TIME:
+        # 核心需求："并且我看到人物的坐标也是跟着移动的，那么我只需要要835左右按住上键就可以抓住绳子"
+        # 实时检测角色飞行中的世界坐标是否到达目标按UP线:
+        if not self.up_pressed:
+            reached_up_x = False
+            if self.sweep_dir == "RIGHT" and c.xw >= self.up_trigger_x:
+                reached_up_x = True
+            elif self.sweep_dir == "LEFT" and c.xw <= self.up_trigger_x:
+                reached_up_x = True
+            elif abs(self.lr.x - c.xw) <= abs(self.lr.x - self.up_trigger_x):
+                # 距离已经小于或等于目标抓梯距离 (防止单帧跳步)
+                reached_up_x = True
+            elif el >= 0.25:
+                # 滞空兜底 (若坐标延迟未刷新，在滞空 250ms 时强制按 UP 兜底)
+                reached_up_x = True
+
+            if reached_up_x:
+                self.gc.press_key("UP")
+                self.up_pressed = True
+                self.up_pressed_at = c.now
+                cur_dist = abs(self.lr.x - c.xw)
+                print(f"🪜 [按住UP] 角色空中飞行至 X={c.xw:.0f} (目标线={self.up_trigger_x:.0f}, 距梯={cur_dist:.0f}px, 耗时={el*1000:.0f}ms)！按住 UP 键攀爬！")
+
+        # 持续按住水平方向键！绝不在接近梯子中轴前提前松开方向键，确保空中保持最大横向位移撞向梯子！
+        # 仅在滞空严重超时 (如 > 550ms) 作为异常防卡兜底释放，正常情况下持续按压直到抓稳梯子 (_caught) 或落地
+        dir_hold_limit = float(getattr(c, "climb_dir_hold_ms", 550)) / 1000.0
+        if el >= dir_hold_limit:
             self._release_lr()
 
         # 跟踪最高滞空高度
@@ -537,19 +611,29 @@ class LadderClimber:
 
             landing_offset = c.xw - self.lr.x
             dist_traveled = abs(c.xw - self.launch_xw)
-            print(f"❌ [横跳扫梯] 第 {self.attempt} 次未抓住 | 起跳X={self.launch_xw:.0f}, 梯子X={self.lr.x}, 落地X={c.xw:.0f} (距梯 {landing_offset:+.0f}px, 跳跃位移={dist_traveled:.0f}px), 滞空最高上升={self.launch_yw - self.min_air_yw:.0f}px, 滞空={el*1000:.0f}ms")
+            print(f"❌ [横跳扫梯] 第 {self.attempt} 次未抓住 | 起跳X={self.launch_xw:.0f}, 落地X={c.xw:.0f} (落地距梯={landing_offset:+.0f}px, 位移={dist_traveled:.0f}px), 滞空={el*1000:.0f}ms")
 
             if self.attempt >= self.MAX_ATTEMPTS:
                 return self._fail(f"连续 {self.attempt} 次横跳扫梯未抓住")
 
-            self._enter("APPROACH", c.now)
+            self._enter("LAND_SETTLE", c.now)
             return RUNNING
 
         return RUNNING
 
+    LAND_SETTLE_TIME = 0.40  # 落地硬直缓冲时间 (秒)，站稳后再走位起跳
+
+    def _st_land_settle(self, c):
+        self.gc.clear_movement()
+        if c.now - self.t_state >= self.LAND_SETTLE_TIME:
+            self._enter("APPROACH", c.now)
+        return RUNNING
+
     def _caught(self, c):
+        self._release_lr()  # 抓稳梯子后，立即释放左右方向键，防止爬梯过程中左右晃动或脱梯
         el = c.now - self.t_state
-        print(f"🎉 [横跳扫梯] 抓梯成功! (尝试第 {self.attempt+1} 次) | 抓住时坐标:世界({c.xw:.0f}, {c.yw:.0f}), 小地图({c.mx}, {c.my}) | 耗时: {el*1000:.0f}ms")
+        up_hold_time = (c.now - self.up_pressed_at) * 1000 if self.up_pressed_at > 0 else 0
+        print(f"🎉 [横跳扫梯] 抓梯成功! (尝试第 {self.attempt+1} 次) | 按住UP后耗时 {up_hold_time:.0f}ms 抓稳 | 坐标:世界({c.xw:.0f}, {c.yw:.0f}), 小地图({c.mx}, {c.my}) | 总用时: {el*1000:.0f}ms")
         self.nav.calibrate_ladder(self.lr, c.mx, c)
         self.min_my = c.my
         self.last_change = c.now
@@ -612,6 +696,7 @@ class LadderClimber:
             return self._fail("无法从梯子顶端脱离")
         print(f"🪜 [爬梯] 横向探针未移动，仍挂在梯子上 -> 执行 {self.dir_inward}+跳跃 强制脱绳")
         self._hold(self.dir_inward)
+        time.sleep(0.06)
         self.gc.tap_key(c.jump_key, 0.08)
         self.settle_my = c.my
         self.settle_change = c.now
@@ -749,8 +834,8 @@ class DropDown:
 # ============================================================================
 class LayerNavigator:
     MAX_DWELL = 25.0        # 单层最长停留时间 (多层模式下到时强制换层)
-    MIN_DWELL = 3.0         # 单层最短停留时间 (防刚踩上边缘立即误换层)
-    SESSION_GAP = 3.0       # 超过该时间未被调用 => 视为新一轮挂机，重置会话
+    MIN_DWELL = 8.0         # 单层最短停留时间 (保证在该层有充裕打怪时间，防刚踩上边缘几秒就误换层)
+    SESSION_GAP = 60.0      # 长达 60s 完全无任何响应才重置会话 (战斗期间通过 on_combat 持续保活)
     PLATFORM_STABLE = 0.25  # 平台切换需稳定的时间 (过滤跳跃/受击造成的瞬时误吸附)
     BAN_TIME = 25.0         # 失败过多的边临时禁用时长 (默认与 MAX_DWELL 一致，运行时跟随配置)
     EDGE_MAX_FAILS = 3      # 失败尝试达到 3 次后再临时禁用
@@ -771,7 +856,7 @@ class LayerNavigator:
         self.reset_session()
 
     # ------------------------------------------------------------------ 会话
-    def reset_session(self):
+    def reset_session(self, preserve_dwell=False):
         if getattr(self, "primitive", None) is not None:
             self.gc.clear_movement()
         self.primitive = None
@@ -779,10 +864,11 @@ class LayerNavigator:
         self.target_idx = None
         self.route = None
         self.route_idx = 0
-        self.hunt_pid = None
-        self.arrive_time = 0.0
-        self.touched = set()
-        self.turn_count = 0
+        if not preserve_dwell:
+            self.hunt_pid = None
+            self.arrive_time = 0.0
+            self.touched = set()
+            self.turn_count = 0
         self.banned = {}
         self.edge_fails = {}
         self.last_step = 0.0
@@ -857,8 +943,12 @@ class LayerNavigator:
 
     # ------------------------------------------------------------------ 外部钩子
     def is_locked(self):
-        """正在执行爬梯/下跳原语：禁止战斗打断、禁止安全区拦截"""
-        return self.primitive is not None
+        """正在执行爬梯/下跳原语或走向跃迁起跳点：禁止战斗打断、禁止安全区拦截"""
+        if self.primitive is not None:
+            return True
+        if self.route and self.route_idx < len(self.route):
+            return True
+        return False
 
     def transit_x_on(self, pid):
         """当前平台上的跃迁目标点 (世界 X)，供安全区放行"""
@@ -868,9 +958,11 @@ class LayerNavigator:
                 return ax
         return None
 
-    def on_combat(self):
-        # 战斗不重置折返与巡逻计数，边巡逻边推怪是正常打怪行为
-        pass
+    def on_combat(self, now=None):
+        """战斗保活：刷新活跃时间，维持单层打怪驻留计时连续性，防止误触重置"""
+        import time
+        t = now or time.time()
+        self.last_step = t
 
     def on_patrol_turn(self, side):
         self.touched.add(side)
@@ -922,7 +1014,7 @@ class LayerNavigator:
             self.MAX_DWELL = c.max_dwell
 
         if self.last_step > 0 and now - self.last_step > self.SESSION_GAP:
-            self.reset_session()
+            self.reset_session(preserve_dwell=True)
         self.last_step = now
 
         # 1. 执行中的动作原语
@@ -984,8 +1076,10 @@ class LayerNavigator:
                 print(f"🎯 [导航] 到达打怪层 #{target} ({self.target_idx + 1}/{len(tg)}) | 默认下跳点: X={drop_x_info}")
             
             dwell = now - self.arrive_time
-            done_turns = (self.turn_count >= self.turns_per_layer) and (dwell >= self.MIN_DWELL)
-            done_lap = ({"L", "R"} <= self.touched) and (dwell >= self.MIN_DWELL)
+            # 动态科学打怪驻留门槛：兼顾用户设置的趟数与最长时间，杜绝刚踩几秒就秒换层
+            effective_min_dwell = min(15.0, max(5.0, self.MAX_DWELL * 0.6))
+            done_turns = (self.turn_count >= self.turns_per_layer) and (dwell >= effective_min_dwell)
+            done_lap = ({"L", "R"} <= self.touched) and (dwell >= effective_min_dwell)
             done_time = dwell >= self.MAX_DWELL
 
             # 若通往下一层的路线仍在失败冷却中，必须打满单层最长打怪时间才允许切换，避免过早换层撞墙
@@ -1000,13 +1094,18 @@ class LayerNavigator:
                     if r_without_ban:
                         route_blocked_by_ban = True
 
-            if route_blocked_by_ban:
+            if getattr(c, "nav_test_mode", False):
+                # 导航测试模式：不打怪，到层短暂停留 1.2s 站稳后直接前往下一层，高速循环验证跨层漫游与跳跃攀爬
+                ready_to_switch = (dwell >= 1.2)
+            elif route_blocked_by_ban:
                 ready_to_switch = done_time
             else:
                 ready_to_switch = (done_turns or done_lap or done_time)
 
             if len(tg) > 1 and ready_to_switch:
-                if done_time:
+                if getattr(c, "nav_test_mode", False):
+                    why = "导航测试模式极速切层"
+                elif done_time:
                     why = f"停留达到上限 {self.MAX_DWELL:.0f}s"
                 elif done_turns:
                     why = f"巡逻打怪已完成 {self.turn_count}/{self.turns_per_layer} 趟"
