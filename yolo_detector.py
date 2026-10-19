@@ -515,6 +515,50 @@ class DetectorApp(QMainWindow):
 
         minimap_layout.addLayout(mm_spin_layout)
 
+        # 小地图分辨率缩放与快速预设工具栏
+        mm_scale_layout = QHBoxLayout()
+        mm_scale_layout.addWidget(QLabel("🔍 分辨率缩放:"))
+        
+        self.cb_scale_preset = QComboBox()
+        self.cb_scale_preset.addItem("自定义比例", -1.0)
+        self.cb_scale_preset.addItem("1.00x (800x600 原生)", 1.0)
+        self.cb_scale_preset.addItem("1.25x (5:4 比例)", 1.25)
+        self.cb_scale_preset.addItem("1.28x (1024x768 / 768p)", 1.28)
+        self.cb_scale_preset.addItem("1.33x (4:3 扩展)", 1.33)
+        self.cb_scale_preset.addItem("1.50x (1366x768 推荐)", 1.50)
+        self.cb_scale_preset.addItem("1.71x (1366/800 宽屏等比)", 1.7075)
+        self.cb_scale_preset.setToolTip("快捷选择常用游戏分辨率对应的小地图缩放比例")
+        mm_scale_layout.addWidget(self.cb_scale_preset)
+
+        mm_scale_layout.addWidget(QLabel("微调:"))
+        self.sp_minimap_scale = QDoubleSpinBox()
+        self.sp_minimap_scale.setRange(0.50, 3.50)
+        self.sp_minimap_scale.setSingleStep(0.05)
+        self.sp_minimap_scale.setDecimals(2)
+        self.sp_minimap_scale.setSuffix("x")
+        initial_scale = float(getattr(self.minimap_tracker, "minimap_scale", 1.5))
+        self.sp_minimap_scale.setValue(initial_scale)
+        self.sp_minimap_scale.setToolTip("精细微调小地图分辨率缩放比例。选择地图XML或调节比例时将自动计算最佳框选宽高。")
+        self.sp_minimap_scale.valueChanged.connect(self.on_minimap_scale_changed)
+        mm_scale_layout.addWidget(self.sp_minimap_scale)
+
+        self.btn_apply_scale = QPushButton("📐 重新应用比例")
+        self.btn_apply_scale.setToolTip("根据当前缩放比例，立即重新计算并调整当前地图的小地图框选尺寸")
+        self.btn_apply_scale.clicked.connect(self._apply_map_canvas_size)
+        mm_scale_layout.addWidget(self.btn_apply_scale)
+
+        # 初始化预设 ComboBox 选中项
+        matched_idx = 0
+        for i in range(1, self.cb_scale_preset.count()):
+            v = self.cb_scale_preset.itemData(i)
+            if v is not None and abs(v - initial_scale) < 0.01:
+                matched_idx = i
+                break
+        self.cb_scale_preset.setCurrentIndex(matched_idx)
+        self.cb_scale_preset.currentIndexChanged.connect(self.on_scale_preset_changed)
+
+        minimap_layout.addLayout(mm_scale_layout)
+
         # 路线录制工具栏
         route_rec_layout = QHBoxLayout()
         self.btn_toggle_rec = QPushButton("⏺ 开始录制路线")
@@ -1188,6 +1232,34 @@ class DetectorApp(QMainWindow):
     def on_roi_selected(self, x, y, w, h):
         self.minimap_tracker.set_crop_box(x, y, w, h)
         self.update_crop_spins_from_tracker()
+
+        # 如果当前载入了地图 XML，自动计算当前手动画框对应的缩放比例并同步
+        if self.decision_engine and self.decision_engine.map_parser and self.decision_engine.map_parser.canvas_w > 0:
+            cw = self.decision_engine.map_parser.canvas_w
+            calc_scale = round(w / cw, 2)
+            if 0.5 <= calc_scale <= 3.5 and hasattr(self, "sp_minimap_scale"):
+                self.sp_minimap_scale.blockSignals(True)
+                self.sp_minimap_scale.setValue(calc_scale)
+                self.sp_minimap_scale.blockSignals(False)
+                self.minimap_tracker.minimap_scale = calc_scale
+                self.minimap_tracker.save_config()
+
+                if hasattr(self, "cb_scale_preset"):
+                    self.cb_scale_preset.blockSignals(True)
+                    matched = False
+                    for i in range(1, self.cb_scale_preset.count()):
+                        val = self.cb_scale_preset.itemData(i)
+                        if val is not None and abs(val - calc_scale) < 0.01:
+                            self.cb_scale_preset.setCurrentIndex(i)
+                            matched = True
+                            break
+                    if not matched:
+                        self.cb_scale_preset.setCurrentIndex(0)
+                    self.cb_scale_preset.blockSignals(False)
+
+                self.log(f"【小地图对齐成功】框选更新: Left={x}, Top={y}, Width={w}, Height={h} | 自动反推缩放比例: {calc_scale:.2f}x")
+                return
+
         self.log(f"【小地图对齐成功】框选更新: Left={x}, Top={y}, Width={w}, Height={h}")
 
     def on_template_picked(self, patch):
@@ -1564,26 +1636,68 @@ class DetectorApp(QMainWindow):
                 self.update_marked_layers_ui()
                 self.log(f"【地图更新】已载入地图: {os.path.basename(xml_path)}，小地图平台已就绪")
 
+    def on_minimap_scale_changed(self, value):
+        """当用户微调小地图分辨率缩放比例时实时更新并保存"""
+        self.minimap_tracker.minimap_scale = float(value)
+        self.minimap_tracker.save_config()
+
+        # 同步更新预设 ComboBox 显示（如果有匹配项就选，否则选自定义）
+        if hasattr(self, "cb_scale_preset"):
+            self.cb_scale_preset.blockSignals(True)
+            matched = False
+            for i in range(1, self.cb_scale_preset.count()):
+                val = self.cb_scale_preset.itemData(i)
+                if val is not None and abs(val - value) < 0.01:
+                    self.cb_scale_preset.setCurrentIndex(i)
+                    matched = True
+                    break
+            if not matched:
+                self.cb_scale_preset.setCurrentIndex(0) # 自定义
+            self.cb_scale_preset.blockSignals(False)
+
+        self._apply_map_canvas_size()
+
+    def on_scale_preset_changed(self, index):
+        """当用户选择常用分辨率缩放预设时自动同步 DoubleSpinBox 并重新计算尺寸"""
+        val = self.cb_scale_preset.itemData(index)
+        if val is not None and val > 0:
+            if hasattr(self, "sp_minimap_scale"):
+                self.sp_minimap_scale.blockSignals(True)
+                self.sp_minimap_scale.setValue(float(val))
+                self.sp_minimap_scale.blockSignals(False)
+            self.minimap_tracker.minimap_scale = float(val)
+            self.minimap_tracker.save_config()
+            self._apply_map_canvas_size()
+
     def _apply_map_canvas_size(self):
-        """根据当前地图 XML 的真实 canvas 尺寸自动设置小地图框选宽高与微调偏移"""
-        if self.decision_engine.map_parser:
+        """根据当前地图 XML 的真实 canvas 尺寸及分辨率缩放比例自动设置小地图框选宽高与微调偏移"""
+        if self.decision_engine and self.decision_engine.map_parser:
             mp = self.decision_engine.map_parser
             cw = mp.canvas_w
             ch = mp.canvas_h
             if cw > 0 and ch > 0:
+                scale_val = 1.0
+                if hasattr(self, "sp_minimap_scale"):
+                    scale_val = self.sp_minimap_scale.value()
+                elif hasattr(self.minimap_tracker, "minimap_scale"):
+                    scale_val = self.minimap_tracker.minimap_scale
+
+                scaled_w = max(20, int(round(cw * scale_val)))
+                scaled_h = max(20, int(round(ch * scale_val)))
+
                 self.sp_crop_w.blockSignals(True)
                 self.sp_crop_h.blockSignals(True)
-                self.sp_crop_w.setValue(cw)
-                self.sp_crop_h.setValue(ch)
+                self.sp_crop_w.setValue(scaled_w)
+                self.sp_crop_h.setValue(scaled_h)
                 self.sp_crop_w.blockSignals(False)
                 self.sp_crop_h.blockSignals(False)
-                self.minimap_tracker.set_crop_box(self.sp_crop_x.value(), self.sp_crop_y.value(), cw, ch)
+                self.minimap_tracker.set_crop_box(self.sp_crop_x.value(), self.sp_crop_y.value(), scaled_w, scaled_h)
 
             # 同步当前的 Overlay 微调偏移给 map_parser
             if hasattr(self, "sp_overlay_offset_x") and hasattr(self, "sp_overlay_offset_y"):
                 mp.set_overlay_offset(self.sp_overlay_offset_x.value(), self.sp_overlay_offset_y.value())
 
-            self.log(f"📐 【小地图尺寸自动对齐】已自动调整小地图框选为: {cw} x {ch} px")
+            self.log(f"📐 【小地图尺寸自动对齐】XML底图: {cw}x{ch} px，缩放比例: {scale_val:.2f}x -> 框选已调整为: {scaled_w} x {scaled_h} px")
 
     def on_overlay_offset_changed(self):
         """当用户调整 X/Y 偏移量时实时更新 Overlay 平台对齐并保存"""
