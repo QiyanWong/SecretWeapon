@@ -1,9 +1,7 @@
 {
   "crop_left": 21,
   "crop_top": 153,
-  "crop_w": 267,
-  "crop_h": 142,
-  "overlay_offset_x": 0,
-  "overlay_offset_y": 0,
+  "crop_w": 172,
+  "crop_h": 138,
   "minimap_scale": 1.5
 }

@@ -164,8 +164,6 @@ class MinimapTracker:
     """小地图定位与感知跟踪器 (支持模板匹配)"""
     def __init__(self, crop_box=(20, 146, 272, 170)):
         self.crop_left, self.crop_top, self.crop_w, self.crop_h = crop_box
-        self.overlay_offset_x = 0
-        self.overlay_offset_y = 0
         self.minimap_scale = 1.5  # 默认缩放比例，适应 1366x768 常用放大
         self.player_template = None
         self.last_mask_img = None
@@ -227,8 +225,6 @@ class MinimapTracker:
                 "crop_top": self.crop_top,
                 "crop_w": self.crop_w,
                 "crop_h": self.crop_h,
-                "overlay_offset_x": getattr(self, "overlay_offset_x", 0),
-                "overlay_offset_y": getattr(self, "overlay_offset_y", 0),
                 "minimap_scale": getattr(self, "minimap_scale", 1.5)
             }
             with open(file_path, "w", encoding="utf-8") as f:
@@ -249,10 +245,8 @@ class MinimapTracker:
             self.crop_top = data.get("crop_top", self.crop_top)
             self.crop_w = data.get("crop_w", self.crop_w)
             self.crop_h = data.get("crop_h", self.crop_h)
-            self.overlay_offset_x = data.get("overlay_offset_x", 0)
-            self.overlay_offset_y = data.get("overlay_offset_y", 0)
             self.minimap_scale = float(data.get("minimap_scale", 1.5))
-            print(f"【小地图配置已恢复】: Left={self.crop_left}, Top={self.crop_top}, W={self.crop_w}, H={self.crop_h}, Scale={self.minimap_scale:.2f}x, Offset=({self.overlay_offset_x}, {self.overlay_offset_y})")
+            print(f"【小地图配置已恢复】: Left={self.crop_left}, Top={self.crop_top}, W={self.crop_w}, H={self.crop_h}, Scale={self.minimap_scale:.2f}x")
             return True
         except Exception as e:
             print(f"读取小地图配置异常: {e}")
@@ -472,13 +466,12 @@ class MinimapTracker:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1)
 
             # (5) 绘制顶部 HUD 决策状态条
-            offset_info = f" | 偏移:({mp.offset_x},{mp.offset_y})" if (mp.offset_x != 0 or mp.offset_y != 0) else ""
             if nav:
                 tg_cnt = len(nav.targets())
                 status_str = nav.status
-                step_info = f"[多层导航] {status_str} (打怪层:{tg_cnt}个){offset_info}"
+                step_info = f"[多层导航] {status_str} (打怪层:{tg_cnt}个)"
             else:
-                step_info = f"[平台巡逻] 安全区保护中{offset_info}"
+                step_info = "[平台巡逻] 安全区保护中"
                 
             cv2.putText(canvas, step_info, (4, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 255), 1)
             return canvas

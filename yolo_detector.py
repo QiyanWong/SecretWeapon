@@ -29,7 +29,7 @@ def is_admin():
         return False
 
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QSlider, QComboBox, QGroupBox, QTextEdit, QLineEdit,
     QSizePolicy, QSpinBox, QDoubleSpinBox, QCheckBox, QFrame, QSplitter, QColorDialog, QInputDialog, QScrollArea,
     QProgressBar
@@ -44,6 +44,7 @@ from captcha_detector import CaptchaAlertDetector, BotSessionLogger, get_system_
 from disconnect_detector import DisconnectAlertDetector
 from auto_buff_manager import AutoBuffManager
 from hp_mp_detector import HpMpDetector
+from exp_tracker import ExpTracker
 
 # 项目基础路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -227,6 +228,7 @@ class DetectorApp(QMainWindow):
         self.last_dc_log_time = 0.0
         self.auto_buff_manager = AutoBuffManager(self.game_controller)
         self.hp_mp_detector = HpMpDetector()
+        self.exp_tracker = ExpTracker(log_callback=self.log)
 
         # 4. 加载 YOLO 权重 (由下拉选择器动态管理与自动默认最新版本)
         self.weights = None
@@ -692,36 +694,6 @@ class DetectorApp(QMainWindow):
         h_map_select.addWidget(self.btn_refresh_maps, 1)
         map_nav_layout.addLayout(h_map_select)
 
-        # 🌟 Overlay 平台对齐微调控制栏 (支持手动像素级微调 X/Y 偏移以严丝合缝对齐小地图底图)
-        h_overlay_align = QHBoxLayout()
-        h_overlay_align.addWidget(QLabel("📐 Overlay平台对齐微调:"))
-        h_overlay_align.addWidget(QLabel("X偏移:"))
-        self.sp_overlay_offset_x = QSpinBox()
-        self.sp_overlay_offset_x.setRange(-500, 500)
-        self.sp_overlay_offset_x.setValue(getattr(self.minimap_tracker, "overlay_offset_x", 0))
-        self.sp_overlay_offset_x.setSuffix(" px")
-        self.sp_overlay_offset_x.setFixedWidth(75)
-        self.sp_overlay_offset_x.setToolTip("手动微调 XML 平台与小地图底图在水平方向的对齐偏移量 (正数向右，负数向左)")
-        self.sp_overlay_offset_x.valueChanged.connect(self.on_overlay_offset_changed)
-        h_overlay_align.addWidget(self.sp_overlay_offset_x)
-
-        h_overlay_align.addWidget(QLabel("Y偏移:"))
-        self.sp_overlay_offset_y = QSpinBox()
-        self.sp_overlay_offset_y.setRange(-500, 500)
-        self.sp_overlay_offset_y.setValue(getattr(self.minimap_tracker, "overlay_offset_y", 0))
-        self.sp_overlay_offset_y.setSuffix(" px")
-        self.sp_overlay_offset_y.setFixedWidth(75)
-        self.sp_overlay_offset_y.setToolTip("手动微调 XML 平台与小地图底图在垂直方向的对齐偏移量 (正数向下，负数向上)")
-        self.sp_overlay_offset_y.valueChanged.connect(self.on_overlay_offset_changed)
-        h_overlay_align.addWidget(self.sp_overlay_offset_y)
-
-        self.btn_reset_overlay = QPushButton("🔄 归零")
-        self.btn_reset_overlay.setFixedWidth(55)
-        self.btn_reset_overlay.setToolTip("重置 X/Y 对齐微调为 0")
-        self.btn_reset_overlay.clicked.connect(self.reset_overlay_offset)
-        h_overlay_align.addWidget(self.btn_reset_overlay)
-        map_nav_layout.addLayout(h_overlay_align)
-
         mid_layout.addWidget(map_nav_group)
 
         # 🌟 生命与蓝量智能监控与自动补给配置组
@@ -879,6 +851,58 @@ class DetectorApp(QMainWindow):
         potion_layout.addLayout(h_mp_row)
 
         mid_layout.addWidget(potion_group)
+
+        # 🌟 角色打怪经验时薪与升级预估配置组 (EXP / Hour Rate)
+        exp_group = QGroupBox("📊 角色打怪经验时薪与升级预估 (EXP / Hour Rate)")
+        exp_layout = QVBoxLayout(exp_group)
+
+        # 1. 顶部控制与状态栏
+        h_exp_top = QHBoxLayout()
+        self.lbl_exp_timer = QLabel("⏱️ 打怪时长: 00:00:00 (打怪未开始)")
+        self.lbl_exp_timer.setStyleSheet("color: #a6adc8; font-weight: bold; font-size: 11px;")
+        h_exp_top.addWidget(self.lbl_exp_timer, 2)
+
+        self.btn_reset_exp = QPushButton("🔄 重置统计 (Reset)")
+        self.btn_reset_exp.setFixedWidth(120)
+        self.btn_reset_exp.setToolTip("重置战斗有效时长与累计已获经验，重新以当前经验为起点开始计算时薪")
+        self.btn_reset_exp.clicked.connect(self.on_reset_exp_clicked)
+        h_exp_top.addWidget(self.btn_reset_exp, 1)
+
+        exp_layout.addLayout(h_exp_top)
+
+        # 2. 四格高颜值数据看板 (QGridLayout)
+        grid_exp = QGridLayout()
+        grid_exp.setContentsMargins(4, 4, 4, 4)
+        grid_exp.setHorizontalSpacing(14)
+        grid_exp.setVerticalSpacing(4)
+
+        # 格1: 当前经验
+        grid_exp.addWidget(QLabel("🎯 当前经验:"), 0, 0)
+        self.lbl_cur_exp_val = QLabel("打怪启动后识别...")
+        self.lbl_cur_exp_val.setStyleSheet("color: #cdd6f4; font-weight: bold; font-size: 11px;")
+        grid_exp.addWidget(self.lbl_cur_exp_val, 0, 1)
+
+        # 格2: 累计获取
+        grid_exp.addWidget(QLabel("📈 累计获取:"), 0, 2)
+        self.lbl_gained_exp_val = QLabel("+0 EXP (+0.00%)")
+        self.lbl_gained_exp_val.setStyleSheet("color: #a6e3a1; font-weight: bold; font-size: 11px;")
+        grid_exp.addWidget(self.lbl_gained_exp_val, 0, 3)
+
+        # 格3: 经验时薪 (最醒目亮黄色)
+        grid_exp.addWidget(QLabel("⚡ 经验时薪:"), 1, 0)
+        self.lbl_exp_rate_val = QLabel("-- EXP/h (--%/h)")
+        self.lbl_exp_rate_val.setStyleSheet("color: #f9e2af; font-weight: bold; font-size: 12px;")
+        grid_exp.addWidget(self.lbl_exp_rate_val, 1, 1)
+
+        # 格4: 预计升级所需 (ETA 天蓝色)
+        grid_exp.addWidget(QLabel("⏳ 预计升级:"), 1, 2)
+        self.lbl_exp_eta_val = QLabel("--")
+        self.lbl_exp_eta_val.setStyleSheet("color: #89dceb; font-weight: bold; font-size: 11px;")
+        grid_exp.addWidget(self.lbl_exp_eta_val, 1, 3)
+
+        exp_layout.addLayout(grid_exp)
+
+        mid_layout.addWidget(exp_group)
 
         # 中间：战斗攻击与持续 Buff 技能配置组
         strat_group = QGroupBox("⚔️ 战斗攻击与持续 Buff 技能配置")
@@ -1464,6 +1488,69 @@ class DetectorApp(QMainWindow):
             self.lbl_gauge_status.setText("⚪ 未检测到血条/蓝条 (请确认游戏窗口在最前且非黑屏切换中)")
             self.lbl_gauge_status.setStyleSheet("color: #fab387; font-size: 11px; margin-left: 2px;")
 
+    def on_reset_exp_clicked(self):
+        """用户点击【重置统计】按钮：清空战斗时长与累计已获经验，以当前经验为新起点"""
+        if hasattr(self, 'exp_tracker') and self.exp_tracker:
+            self.exp_tracker.reset()
+            self.update_exp_stats_ui()
+
+    def update_exp_stats_ui(self):
+        """实时刷新 UI 经验看板上的计时器、当前经验、累计已获、时薪和预计升级 ETA"""
+        if not hasattr(self, 'exp_tracker') or not self.exp_tracker:
+            return
+        stats = self.exp_tracker.get_stats()
+
+        # 1. 打怪时长标签
+        if stats["is_active"]:
+            self.lbl_exp_timer.setText(f"⏱️ 打怪时长: {stats['elapsed_str']} (🟢 战斗中)")
+            self.lbl_exp_timer.setStyleSheet("color: #a6e3a1; font-weight: bold; font-size: 11px;")
+        else:
+            if stats["elapsed_seconds"] > 0:
+                self.lbl_exp_timer.setText(f"⏱️ 打怪时长: {stats['elapsed_str']} (⏸️ 打怪暂停)")
+                self.lbl_exp_timer.setStyleSheet("color: #fab387; font-weight: bold; font-size: 11px;")
+            else:
+                self.lbl_exp_timer.setText("⏱️ 打怪时长: 00:00:00 (打怪未开始)")
+                self.lbl_exp_timer.setStyleSheet("color: #a6adc8; font-weight: bold; font-size: 11px;")
+
+        # 2. 当前经验
+        if stats["current_exp"] is not None:
+            pct_text = f" ({stats['current_pct']:.2f}%)" if stats['current_pct'] is not None else ""
+            self.lbl_cur_exp_val.setText(f"{stats['current_exp']:,}{pct_text}")
+        elif stats["current_pct"] is not None:
+            self.lbl_cur_exp_val.setText(f"{stats['current_pct']:.2f}%")
+        else:
+            self.lbl_cur_exp_val.setText("打怪启动后识别..." if stats["is_active"] else "等待打怪启动...")
+
+        # 3. 累计已获
+        g_exp = stats["gained_exp"]
+        g_pct = stats["gained_pct"]
+        if stats["level_ups"] > 0:
+            self.lbl_gained_exp_val.setText(f"+{g_exp:,} EXP (+{g_pct:.2f}%) [已升{stats['level_ups']}级!]")
+        else:
+            self.lbl_gained_exp_val.setText(f"+{g_exp:,} EXP (+{g_pct:.2f}%)")
+
+        # 4. 经验时薪
+        rate_exp = stats["exp_per_hour"]
+        rate_pct = stats["pct_per_hour"]
+        if rate_exp > 0 or rate_pct > 0:
+            if rate_exp >= 1000000:
+                rate_str = f"{rate_exp / 1000000.0:.2f}M EXP/h"
+            elif rate_exp >= 1000:
+                rate_str = f"{rate_exp / 1000.0:.1f}k EXP/h"
+            elif rate_exp > 0:
+                rate_str = f"{rate_exp:.0f} EXP/h"
+            else:
+                rate_str = "-- EXP/h"
+
+            if rate_pct > 0:
+                rate_str += f" ({rate_pct:.2f}%/h)"
+            self.lbl_exp_rate_val.setText(rate_str)
+        else:
+            self.lbl_exp_rate_val.setText("-- EXP/h (--%/h)")
+
+        # 5. 预计升级所需 ETA
+        self.lbl_exp_eta_val.setText(stats["eta_str"])
+
     def toggle_auto_buff(self, state):
         if state == Qt.Checked:
             self.sync_buff_config()
@@ -1478,6 +1565,11 @@ class DetectorApp(QMainWindow):
             self.btn_bot.setObjectName("btnBotStop")
             self.btn_bot.setStyle(self.btn_bot.style())
             self.log("【打怪总开关】已启动打怪逻辑！(联动激活【YOLO检测】和【状态保持】)")
+
+            # 0. 联动经验时薪监控：开启有效打怪计时
+            if hasattr(self, 'exp_tracker') and self.exp_tracker:
+                self.exp_tracker.start_combat()
+                self.update_exp_stats_ui()
 
             # 1. 记录系统主音量作为打怪基准音量
             cur_vol = get_system_volume()
@@ -1512,6 +1604,11 @@ class DetectorApp(QMainWindow):
             self.btn_bot.setStyle(self.btn_bot.style())
             self.decision_engine.reset()
             self.game_controller.release_all_keys()
+
+            # 0. 联动经验时薪监控：暂停有效打怪计时
+            if hasattr(self, 'exp_tracker') and self.exp_tracker:
+                self.exp_tracker.stop_combat()
+                self.update_exp_stats_ui()
 
             # 1. 结束本次打怪 Session 并写入结束时间戳至本地日志
             if hasattr(self, 'session_logger') and self.session_logger:
@@ -1693,27 +1790,7 @@ class DetectorApp(QMainWindow):
                 self.sp_crop_h.blockSignals(False)
                 self.minimap_tracker.set_crop_box(self.sp_crop_x.value(), self.sp_crop_y.value(), scaled_w, scaled_h)
 
-            # 同步当前的 Overlay 微调偏移给 map_parser
-            if hasattr(self, "sp_overlay_offset_x") and hasattr(self, "sp_overlay_offset_y"):
-                mp.set_overlay_offset(self.sp_overlay_offset_x.value(), self.sp_overlay_offset_y.value())
-
             self.log(f"📐 【小地图尺寸自动对齐】XML底图: {cw}x{ch} px，缩放比例: {scale_val:.2f}x -> 框选已调整为: {scaled_w} x {scaled_h} px")
-
-    def on_overlay_offset_changed(self):
-        """当用户调整 X/Y 偏移量时实时更新 Overlay 平台对齐并保存"""
-        ox = self.sp_overlay_offset_x.value()
-        oy = self.sp_overlay_offset_y.value()
-        self.minimap_tracker.overlay_offset_x = ox
-        self.minimap_tracker.overlay_offset_y = oy
-        if self.decision_engine and self.decision_engine.map_parser:
-            self.decision_engine.map_parser.set_overlay_offset(ox, oy)
-        self.minimap_tracker.save_config()
-
-    def reset_overlay_offset(self):
-        """重置 Overlay 偏移对齐为 (0, 0)"""
-        self.sp_overlay_offset_x.setValue(0)
-        self.sp_overlay_offset_y.setValue(0)
-        self.log("📐 【Overlay微调】已重置平台对齐偏移量为 (0, 0)")
 
     def update_marked_layers_ui(self):
         """刷新打怪平台标记状态显示"""
@@ -2227,6 +2304,21 @@ class DetectorApp(QMainWindow):
             if self.is_monitoring_preview:
                 self.hp_mp_detector.draw_overlay(game_frame, hp_pct, mp_pct, gauge_dbg)
 
+        # 1.6 角色打怪经验时薪 (EXP/h) 统计 (仅在打怪期间累加战斗有效时长并采样 OCR)
+        if hasattr(self, 'exp_tracker') and self.exp_tracker:
+            self.exp_tracker.update_tick()
+            if is_gauge_ok and gauge_dbg and "exp_rect" in gauge_dbg:
+                exp_rect = gauge_dbg["exp_rect"]
+                if self.is_bot_running:
+                    self.exp_tracker.feed_frame(game_frame, exp_rect)
+                if self.is_monitoring_preview:
+                    self.exp_tracker.draw_overlay(game_frame, exp_rect)
+
+            now_t = time.time()
+            if now_t - getattr(self, '_last_exp_ui_update', 0.0) >= 0.2:
+                self._last_exp_ui_update = now_t
+                self.update_exp_stats_ui()
+
         # 2. 从游戏帧剪裁小地图图像 & 进行小地图定位
         minimap_bgr = self.minimap_tracker.crop_minimap(game_frame)
         self.last_raw_minimap = minimap_bgr.copy() if minimap_bgr is not None else None
@@ -2246,14 +2338,7 @@ class DetectorApp(QMainWindow):
                     px, py = self.player_map_pos
                     curr_target = self.route_manager.get_current_target_node()
                     next_target = self.route_manager.get_current_next_node()
-                    seg_str = f" [当前段: P{curr_target.node_id}->P{next_target.node_id}]" if (curr_target and next_target and self.route_manager.nodes) else ""
-                    offset_info = ""
-                    if self.decision_engine and self.decision_engine.map_parser:
-                        ox = self.decision_engine.map_parser.offset_x
-                        oy = self.decision_engine.map_parser.offset_y
-                        if ox != 0 or oy != 0:
-                            offset_info = f" | 微调:({ox:+d},{oy:+d})"
-                    self.log(f"【小地图定位】玩家小地图坐标: ({px}, {py}){offset_info} | 置信度: {conf_score:.2f}{seg_str}")
+                    self.log(f"【小地图定位】玩家小地图坐标: ({px}, {py}) | 置信度: {conf_score:.2f}{seg_str}")
                 else:
                     self.log(f"【小地图定位】未匹配到玩家图标 (最高得分: {conf_score:.2f} < 0.70)")
 

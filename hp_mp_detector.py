@@ -178,11 +178,17 @@ class HpMpDetector:
         else:
             self.last_mp = raw_mp
 
+        exp_x = match_x + 510
+        exp_y = match_y - 2
+        exp_w = 245
+        exp_h = 24
+
         debug_info = {
             "match_loc": (match_x, match_y),
             "match_score": best_score,
             "hp_rect": (hp_x, hp_y, bw, bh),
             "mp_rect": (mp_x, mp_y, bw, bh),
+            "exp_rect": (exp_x, exp_y, exp_w, exp_h),
             "raw_hp": raw_hp,
             "raw_mp": raw_mp,
         }
