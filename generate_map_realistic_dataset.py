@@ -37,6 +37,7 @@ BG_DIR = os.path.join(ASSET_DIR, "backgrounds")
 MONSTERS_DIR = os.path.join(ASSET_DIR, "monsters")
 DROPS_DIR = os.path.join(ASSET_DIR, "drops")
 PLAYER_DIR = os.path.join(ASSET_DIR, "player")
+DISTRACTORS_DIR = os.path.join(ASSET_DIR, "distractors")
 MAP_RAW_ROOT = os.path.join(BASE_DIR, "dataset", "map_raw_images")
 
 # 官方怪物 ID 映射
@@ -385,13 +386,14 @@ def download_map_assets(map_name, xml_path):
     return full_map, sorted(list(mobs)), platforms
 
 
-def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negative_ratio=0.10):
+def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negative_ratio=0.10, player_scale=1.0):
     """
     高密度真实地图合成生成器
     - count: 生成图片组数 (默认 60)
     - min_mobs: 视口内最少怪物数 (默认 6 只)
     - max_mobs: 视口内最多怪物数 (默认 12 只)
     - negative_ratio: 纯雪景地貌抗干扰负样本比例 (默认 10%)
+    - player_scale: 玩家角色缩放比例 (默认 1.0 即 100% 原始像素)
     """
     xml_path = os.path.join(MAP_DIR, f"{map_name}.xml")
     if not os.path.exists(xml_path):
@@ -432,22 +434,88 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
                     im = im.crop((bx1, by1, bx2 + 1, by2 + 1))
                 mobs_sprites[m].append(im)
 
-    # 载入玩家动作
-    player_sprites = {'player_left': [], 'player_right': []}
-    for root_d, dirs, files in os.walk(PLAYER_DIR):
-        if 'backup' in root_d.lower() or 'old' in root_d.lower():
-            continue
-        for f in files:
-            if f.lower().endswith('.png'):
-                p_cls = 'player_left' if 'left' in f.lower() or 'left' in root_d.lower() else 'player_right'
+    # 载入各玩家角色独立素材池 (player1, player2, player3 等等，权重完全一致)
+    players_data = {}  # { 'player1': {'player_left': [...], 'player_right': [...]}, ... }
+
+    if os.path.exists(PLAYER_DIR):
+        for sub_dir in sorted(os.listdir(PLAYER_DIR)):
+            sub_path = os.path.join(PLAYER_DIR, sub_dir)
+            if not os.path.isdir(sub_path):
+                continue
+            if 'backup' in sub_dir.lower() or 'old' in sub_dir.lower():
+                continue
+
+            p_dict = {'player_left': [], 'player_right': []}
+            for root_d, dirs, files in os.walk(sub_path):
+                rel_root = os.path.relpath(root_d, sub_path).replace('\\', '/').lower()
+                for f in files:
+                    if not f.lower().endswith('.png') or f.lower().startswith('icon'):
+                        continue
+                    try:
+                        im = Image.open(os.path.join(root_d, f)).convert('RGBA')
+                        bx1, by1, bx2, by2 = get_tight_bbox(im)
+                        if bx2 > bx1 and by2 > by1:
+                            im = im.crop((bx1, by1, bx2 + 1, by2 + 1))
+                        if player_scale != 1.0 and player_scale > 0.1:
+                            nw = max(10, int(round(im.width * player_scale)))
+                            nh = max(10, int(round(im.height * player_scale)))
+                            im = im.resize((nw, nh), Image.Resampling.BILINEAR)
+
+                        fname = f.lower()
+                        # 若文件名或文件夹包含明确左右标识
+                        if 'left' in fname or 'left' in rel_root:
+                            im_l = im
+                            im_r = im.transpose(Image.FLIP_LEFT_RIGHT)
+                            p_dict['player_left'].append(im_l)
+                            p_dict['player_right'].append(im_r)
+                        elif 'right' in fname or 'right' in rel_root:
+                            im_r = im
+                            im_l = im.transpose(Image.FLIP_LEFT_RIGHT)
+                            p_dict['player_right'].append(im_r)
+                            p_dict['player_left'].append(im_l)
+                        else:
+                            # 纸娃娃无左右标识，默认朝左，镜像生成朝右
+                            im_l = im
+                            im_r = im.transpose(Image.FLIP_LEFT_RIGHT)
+                            p_dict['player_left'].append(im_l)
+                            p_dict['player_right'].append(im_r)
+                    except Exception:
+                        pass
+
+            if p_dict['player_left'] and p_dict['player_right']:
+                players_data[sub_dir] = p_dict
+
+    # 载入金色蘑菇宠物素材 (每个玩家旁边必带一只，不打标签作为负样本)
+    pet_dir = os.path.join(DISTRACTORS_DIR, "pet_golden_mushroom")
+    pet_sprites = []
+    if os.path.exists(pet_dir):
+        for f in os.listdir(pet_dir):
+            if f.lower().endswith('.png') and not f.lower().startswith('icon'):
                 try:
-                    im = Image.open(os.path.join(root_d, f)).convert('RGBA')
-                    bx1, by1, bx2, by2 = get_tight_bbox(im)
-                    if bx2 > bx1 and by2 > by1:
-                        im = im.crop((bx1, by1, bx2 + 1, by2 + 1))
-                    player_sprites[p_cls].append(im)
+                    pim = Image.open(os.path.join(pet_dir, f)).convert('RGBA')
+                    pbx1, pby1, pbx2, pby2 = get_tight_bbox(pim)
+                    if pbx2 > pbx1 and pby2 > pby1:
+                        pim = pim.crop((pbx1, pby1, pbx2 + 1, pby2 + 1))
+                    pet_sprites.append(pim)
                 except Exception:
                     pass
+
+    # 载入备用通用干扰物素材
+    distractor_sprites = []
+    if os.path.exists(DISTRACTORS_DIR):
+        for root_d, dirs, files in os.walk(DISTRACTORS_DIR):
+            if 'pet_golden_mushroom' in root_d.lower():
+                continue
+            for f in files:
+                if f.lower().endswith('.png') and not f.lower().startswith('icon'):
+                    try:
+                        dim = Image.open(os.path.join(root_d, f)).convert('RGBA')
+                        dbx1, dby1, dbx2, dby2 = get_tight_bbox(dim)
+                        if dbx2 > dbx1 and dby2 > dby1:
+                            dim = dim.crop((dbx1, dby1, dbx2 + 1, dby2 + 1))
+                        distractor_sprites.append(dim)
+                    except Exception:
+                        pass
 
     # 载入掉落物与金币
     drops = {}
@@ -524,7 +592,82 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
                     })
 
         if not is_neg and visible_plats:
-            # 动态目标怪物数量 (保证落在用户要求的 min_mobs ~ max_mobs 区间)
+            # 1. 优先放置全部 3 个玩家角色 (player1, player2, player3 各一帧，每个玩家身旁必带一只金蘑菇宠物，且不打标签)
+            if players_data:
+                target_pids = list(players_data.keys())
+                random.shuffle(target_pids)
+
+                for pid in target_pids:
+                    p_cls = random.choice(['player_left', 'player_right'])
+                    p_pool = players_data[pid].get(p_cls, [])
+                    if not p_pool:
+                        continue
+                    p_im = random.choice(p_pool).copy()
+                    psp_w, psp_h = p_im.size
+
+                    placed_this_player = False
+                    shuffled_plats = list(visible_plats)
+                    random.shuffle(shuffled_plats)
+
+                    for tplat in shuffled_plats:
+                        if tplat['vx2'] - tplat['vx1'] < psp_w + 6:
+                            continue
+
+                        for p_attempt in range(35):
+                            pos_x = random.randint(tplat['vx1'], tplat['vx2'] - psp_w)
+                            pos_y = tplat['vy'] - psp_h + 2
+                            cand_box = (pos_x, pos_y, pos_x + psp_w, pos_y + psp_h, p_cls)
+                            overlap = False
+                            for pb in placed_boxes:
+                                if abs(cand_box[3] - pb[3]) < 30:
+                                    if not (cand_box[2] + 12 < pb[0] or cand_box[0] - 12 > pb[2]):
+                                        overlap = True
+                                        break
+                                else:
+                                    if not (cand_box[2] < pb[0] or cand_box[0] > pb[2] or cand_box[3] < pb[1] or cand_box[1] > pb[3]):
+                                        overlap = True
+                                        break
+
+                            if not overlap:
+                                canvas.paste(p_im, (pos_x, pos_y), p_im)
+                                placed_boxes.append(cand_box)
+                                norm_cx = ((pos_x + pos_x + psp_w) / 2.0) / cw
+                                norm_cy = ((pos_y + pos_y + psp_h) / 2.0) / ch
+                                labels.append((class_to_id[p_cls], norm_cx, norm_cy, psp_w / cw, psp_h / ch))
+                                shapes.append({
+                                    "label": p_cls,
+                                    "points": extract_polygon(p_im, pos_x, pos_y),
+                                    "group_id": None, "shape_type": "polygon", "flags": {}
+                                })
+
+                                # 每个玩家身旁必带一只金蘑菇宠物 (不打标签作为负样本)
+                                if pet_sprites:
+                                    pet_im = random.choice(pet_sprites).copy()
+                                    if p_cls == 'player_right':
+                                        pet_im = pet_im.transpose(Image.FLIP_LEFT_RIGHT)
+                                    pet_w, pet_h = pet_im.size
+
+                                    # 智能计算宠物贴地放置坐标 (优先贴在角色身旁，防掉落平台)
+                                    pet_offset = -random.randint(18, 30) if random.random() < 0.5 else (psp_w + random.randint(4, 18))
+                                    pet_x = pos_x + pet_offset
+                                    if pet_x < tplat['vx1']:
+                                        pet_x = pos_x + psp_w + random.randint(4, 18)
+                                    elif pet_x + pet_w > tplat['vx2']:
+                                        pet_x = pos_x - pet_w - random.randint(4, 18)
+
+                                    pet_x = max(tplat['vx1'], min(tplat['vx2'] - pet_w, pet_x))
+                                    pet_y = tplat['vy'] - pet_h + 2
+                                    canvas.paste(pet_im, (pet_x, pet_y), pet_im)
+                                    # 将宠物占位加入 placed_boxes 防怪物叠在宠物上 (标记为 distractor)
+                                    placed_boxes.append((pet_x, pet_y, pet_x + pet_w, pet_y + pet_h, 'distractor'))
+
+                                placed_this_player = True
+                                break
+
+                        if placed_this_player:
+                            break
+
+            # 2. 动态放置地图怪物 (保证落在用户要求的 min_mobs ~ max_mobs 区间)
             target_mob_count = random.randint(min_mobs, max_mobs)
             plat_weights = [max(10, p['len']) for p in visible_plats]
 
@@ -583,42 +726,6 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
                             d_im = drops[drop_info[0]]
                             canvas.paste(d_im, (pos_x + random.randint(0, max(1, msp_w - 15)), tplat['vy'] - d_im.height + 2), d_im)
 
-            # 放置玩家角色 (1 个，高概率出现)
-            if visible_plats and random.random() < 0.90:
-                tplat = random.choice(visible_plats)
-                p_cls = random.choice(['player_left', 'player_right'])
-                plist = player_sprites[p_cls]
-                if plist:
-                    p_im = random.choice(plist).copy()
-                    psp_w, psp_h = p_im.size
-                    if tplat['vx2'] - tplat['vx1'] >= psp_w + 6:
-                        for p_attempt in range(25):
-                            pos_x = random.randint(tplat['vx1'], tplat['vx2'] - psp_w)
-                            pos_y = tplat['vy'] - psp_h + 2
-                            cand_box = (pos_x, pos_y, pos_x + psp_w, pos_y + psp_h, p_cls)
-                            overlap = False
-                            for pb in placed_boxes:
-                                if abs(cand_box[3] - pb[3]) < 30:
-                                    if not (cand_box[2] + 12 < pb[0] or cand_box[0] - 12 > pb[2]):
-                                        overlap = True
-                                        break
-                                else:
-                                    if not (cand_box[2] < pb[0] or cand_box[0] > pb[2] or cand_box[3] < pb[1] or cand_box[1] > pb[3]):
-                                        overlap = True
-                                        break
-                            if not overlap:
-                                canvas.paste(p_im, (pos_x, pos_y), p_im)
-                                placed_boxes.append(cand_box)
-                                norm_cx = ((pos_x + pos_x + psp_w) / 2.0) / cw
-                                norm_cy = ((pos_y + pos_y + psp_h) / 2.0) / ch
-                                labels.append((class_to_id[p_cls], norm_cx, norm_cy, psp_w / cw, psp_h / ch))
-                                shapes.append({
-                                    "label": p_cls,
-                                    "points": extract_polygon(p_im, pos_x, pos_y),
-                                    "group_id": None, "shape_type": "polygon", "flags": {}
-                                })
-                                break
-
         # 保存图片
         out_rgb = canvas.convert("RGB")
         img_path = os.path.join(target_dir, f"{file_id}.jpg")
@@ -665,7 +772,9 @@ if __name__ == '__main__':
     parser.add_argument('--min-mobs', type=int, default=6, help='视口内最少怪物数 (默认 6)')
     parser.add_argument('--max-mobs', type=int, default=12, help='视口内最多怪物数 (默认 12)')
     parser.add_argument('--negative-ratio', type=float, default=0.10, help='纯地貌抗干扰负样本比例 (默认 0.10)')
+    parser.add_argument('--player-scale', type=float, default=1.0, help='玩家角色缩放比例 (默认 1.0 即 100% 原生像素)')
     args = parser.parse_args()
 
     build_realistic_dataset(args.map, count=args.count, min_mobs=args.min_mobs,
-                           max_mobs=args.max_mobs, negative_ratio=args.negative_ratio)
+                           max_mobs=args.max_mobs, negative_ratio=args.negative_ratio,
+                           player_scale=args.player_scale)

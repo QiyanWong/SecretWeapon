@@ -249,37 +249,55 @@ def find_map_background(map_name):
 
 
 def load_player_sprites():
-    """加载玩家左向与右向各动作素材"""
-    player_sprites = {'player_left': [], 'player_right': []}
+    """加载各玩家角色独立素材池 (player1, player2, player3 等等，平权并支持镜像翻转)"""
+    players_data = {}
     if not os.path.exists(PLAYER_DIR):
-        return player_sprites
+        return players_data
 
-    for root, dirs, files in os.walk(PLAYER_DIR):
-        if 'backup' in root.lower() or 'old' in root.lower():
+    for sub_dir in sorted(os.listdir(PLAYER_DIR)):
+        sub_path = os.path.join(PLAYER_DIR, sub_dir)
+        if not os.path.isdir(sub_path):
             continue
-        for f in files:
-            if not f.lower().endswith('.png'):
-                continue
-            full_path = os.path.join(root, f)
-            rel_path = os.path.relpath(full_path, PLAYER_DIR).replace('\\', '/').lower()
+        if 'backup' in sub_dir.lower() or 'old' in sub_dir.lower():
+            continue
 
-            if 'left' in rel_path and 'right' not in rel_path:
-                p_cls = 'player_left'
-            elif 'right' in rel_path and 'left' not in rel_path:
-                p_cls = 'player_right'
-            else:
-                p_cls = 'player_left' if 'left' in f.lower() else 'player_right'
+        p_dict = {'player_left': [], 'player_right': []}
+        for root, dirs, files in os.walk(sub_path):
+            rel_root = os.path.relpath(root, sub_path).replace('\\', '/').lower()
+            for f in files:
+                if not f.lower().endswith('.png') or f.lower().startswith('icon'):
+                    continue
+                full_path = os.path.join(root, f)
+                fname = f.lower()
 
-            try:
-                img = Image.open(full_path).convert("RGBA")
-                bx1, by1, bx2, by2 = get_tight_bbox(img)
-                if bx2 > bx1 and by2 > by1:
-                    img = img.crop((bx1, by1, bx2 + 1, by2 + 1))
-                player_sprites[p_cls].append(img)
-            except Exception:
-                pass
+                try:
+                    img = Image.open(full_path).convert("RGBA")
+                    bx1, by1, bx2, by2 = get_tight_bbox(img)
+                    if bx2 > bx1 and by2 > by1:
+                        img = img.crop((bx1, by1, bx2 + 1, by2 + 1))
 
-    return player_sprites
+                    if 'left' in fname or 'left' in rel_root:
+                        im_l = img
+                        im_r = img.transpose(Image.FLIP_LEFT_RIGHT)
+                        p_dict['player_left'].append(im_l)
+                        p_dict['player_right'].append(im_r)
+                    elif 'right' in fname or 'right' in rel_root:
+                        im_r = img
+                        im_l = img.transpose(Image.FLIP_LEFT_RIGHT)
+                        p_dict['player_right'].append(im_r)
+                        p_dict['player_left'].append(im_l)
+                    else:
+                        im_l = img
+                        im_r = img.transpose(Image.FLIP_LEFT_RIGHT)
+                        p_dict['player_left'].append(im_l)
+                        p_dict['player_right'].append(im_r)
+                except Exception:
+                    pass
+
+        if p_dict['player_left'] and p_dict['player_right']:
+            players_data[sub_dir] = p_dict
+
+    return players_data
 
 
 def load_monster_sprites(monster_classes):
@@ -303,7 +321,7 @@ def load_monster_sprites(monster_classes):
 
 
 def load_drops_and_distractors(monster_classes):
-    """加载该地图怪物的掉落物及通用干扰金币"""
+    """加载该地图怪物的掉落物、金色蘑菇跟宠及通用干扰金币"""
     drops = {}
     for cls in monster_classes:
         drop_name = MONSTER_TO_UNIQUE_DROP.get(cls)
@@ -332,17 +350,22 @@ def load_drops_and_distractors(monster_classes):
                 except Exception:
                     pass
 
-    # 宠物抗干扰
-    pets = []
-    pet_dir = os.path.join(DISTRACTORS_DIR, "pets")
+    # 优先载入金蘑菇宠物素材
+    golden_pets = []
+    pet_dir = os.path.join(DISTRACTORS_DIR, "pet_golden_mushroom")
     if os.path.exists(pet_dir):
-        for p in glob.glob(os.path.join(pet_dir, "*.png")):
-            try:
-                pets.append(Image.open(p).convert("RGBA"))
-            except Exception:
-                pass
+        for f in os.listdir(pet_dir):
+            if f.lower().endswith('.png') and not f.lower().startswith('icon'):
+                try:
+                    im = Image.open(os.path.join(pet_dir, f)).convert("RGBA")
+                    bx1, by1, bx2, by2 = get_tight_bbox(im)
+                    if bx2 > bx1 and by2 > by1:
+                        im = im.crop((bx1, by1, bx2 + 1, by2 + 1))
+                    golden_pets.append(im)
+                except Exception:
+                    pass
 
-    return drops, pets
+    return drops, golden_pets
 
 
 def generate_map_dataset(map_name, count=60, canvas_size=(1280, 720), min_mobs=6, max_mobs=12):
@@ -471,47 +494,52 @@ def generate_map_dataset(map_name, count=60, canvas_size=(1280, 720), min_mobs=6
                             canvas.paste(d_img, (pos_x + random.randint(-5, mw), pos_y + mh - 10), d_img)
                     break
 
-        # 放置玩家 (1 ~ 2 个形态，严格分类 player_left 与 player_right)
-        num_players = random.choice([1, 1, 2])
-        for _ in range(num_players):
-            p_cls = random.choice(['player_left', 'player_right'])
-            p_list = player_sprites.get(p_cls, [])
-            if not p_list:
-                continue
+        # 放置玩家角色：每张图中同时放入现有的全部 3 个玩家各一帧，且每个玩家身旁必带一个金蘑菇宠物 (不打标签)
+        if player_sprites:
+            target_pids = list(player_sprites.keys())
+            random.shuffle(target_pids)
 
-            p_img = random.choice(p_list)
-            pw, ph = p_img.size
-            for attempt in range(30):
-                px = random.randint(40, cw - pw - 40)
-                py = random.randint(int(ch * 0.28), ch - ph - 25)
-                p_box = (px, py, px + pw, py + ph, p_cls)
+            for pid in target_pids:
+                p_cls = random.choice(['player_left', 'player_right'])
+                p_list = player_sprites[pid].get(p_cls, [])
+                if not p_list:
+                    continue
 
-                if not any(check_box_collision(p_box, pb, margin=20) for pb in placed_boxes):
-                    canvas.paste(p_img, (px, py), p_img)
-                    placed_boxes.append(p_box)
+                p_img = random.choice(p_list)
+                pw, ph = p_img.size
+                for attempt in range(35):
+                    px = random.randint(40, cw - pw - 40)
+                    py = random.randint(int(ch * 0.28), ch - ph - 25)
+                    p_box = (px, py, px + pw, py + ph, p_cls)
 
-                    norm_cx = ((px + px + pw) / 2.0) / cw
-                    norm_cy = ((py + py + ph) / 2.0) / ch
-                    norm_w = pw / cw
-                    norm_h = ph / ch
-                    cls_id = class_to_id[p_cls]
-                    labels.append((cls_id, norm_cx, norm_cy, norm_w, norm_h))
+                    if not any(check_box_collision(p_box, pb, margin=20) for pb in placed_boxes):
+                        canvas.paste(p_img, (px, py), p_img)
+                        placed_boxes.append(p_box)
 
-                    poly_pts = extract_polygon_contour(p_img, offset_x=px, offset_y=py)
-                    json_shapes.append({
-                        "label": p_cls, "points": poly_pts, "group_id": None,
-                        "description": "", "shape_type": "polygon", "flags": {}
-                    })
+                        norm_cx = ((px + px + pw) / 2.0) / cw
+                        norm_cy = ((py + py + ph) / 2.0) / ch
+                        norm_w = pw / cw
+                        norm_h = ph / ch
+                        cls_id = class_to_id[p_cls]
+                        labels.append((cls_id, norm_cx, norm_cy, norm_w, norm_h))
 
-                    # 放置跟宠干扰项 (不标注)
-                    if pets and random.random() < 0.60:
-                        pet_im = random.choice(pets).copy()
-                        pet_w, pet_h = pet_im.size
-                        offset_x = (pw + 12) if p_cls == 'player_right' else (-pet_w - 12)
-                        pet_x = int(np.clip(px + offset_x, 10, cw - pet_w - 10))
-                        pet_y = py + ph - pet_h
-                        canvas.paste(pet_im, (pet_x, pet_y), pet_im)
-                    break
+                        poly_pts = extract_polygon_contour(p_img, offset_x=px, offset_y=py)
+                        json_shapes.append({
+                            "label": p_cls, "points": poly_pts, "group_id": None,
+                            "description": "", "shape_type": "polygon", "flags": {}
+                        })
+
+                        # 每个玩家身旁必放置金蘑菇跟宠 (不标注)
+                        if pets:
+                            pet_im = random.choice(pets).copy()
+                            if p_cls == 'player_right':
+                                pet_im = pet_im.transpose(Image.FLIP_LEFT_RIGHT)
+                            pet_w, pet_h = pet_im.size
+                            offset_x = (pw + 10) if random.random() < 0.5 else (-pet_w - 10)
+                            pet_x = int(np.clip(px + offset_x, 10, cw - pet_w - 10))
+                            pet_y = py + ph - pet_h
+                            canvas.paste(pet_im, (pet_x, pet_y), pet_im)
+                        break
 
         # 散落通用金币 (不标注)
         for _ in range(random.randint(1, 2)):
