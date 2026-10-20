@@ -1,11 +1,13 @@
 {
   "marked_platforms": [
     1,
-    25
+    25,
+    183
   ],
   "drop_points": {
     "1": 855,
-    "25": 765
+    "25": 765,
+    "183": 720
   },
   "ladder_calibration": {
     "8": {

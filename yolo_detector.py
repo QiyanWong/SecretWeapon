@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 
 # 优先自动注册并加载 PyTorch DLL 目录，防止 Windows DLL 库与 OpenCV/PyQt5 冲突 (WinError 1114)
 torch_lib_dir = os.path.join(sys.prefix, "Lib", "site-packages", "torch", "lib")
@@ -286,6 +287,8 @@ class DetectorApp(QMainWindow):
         """)
 
         self.init_ui()
+        # 扫描并初始化地图 XML 列表 (优先初始化以便模型下拉框自动识别首张地图并匹配专属模型)
+        self.refresh_map_xml_list()
         self.refresh_model_list()
         self.refresh_window_list()
         
@@ -297,9 +300,6 @@ class DetectorApp(QMainWindow):
         # 载入路线
         if self.route_manager.load_from_json():
             self.log(f"已自动载入巡路路线 ({len(self.route_manager.nodes)} 个节点)")
-
-        # 扫描并初始化地图 XML 列表
-        self.refresh_map_xml_list()
 
         # 30ms 轮询主控制循环
         self.timer = QTimer()
@@ -1339,14 +1339,53 @@ class DetectorApp(QMainWindow):
         self.minimap_tracker.set_player_template(patch)
         self.log(f"【模板提取成功】已提取 {patch.shape} 大小的模板并保存！")
 
-    def get_available_models(self):
+    def parse_model_identity(self, file_path):
         """
-        获取当前所有可用 YOLO 权重模型，按文件最后修改时间倒序排列 (最新的排在最前)
-        来源包括:
-        1. models/*.pt (版本化训练模型)
-        2. BASE_DIR/*.pt (如 best.pt, yolov8n.pt 等)
+        解析模型归属与类型：
+        返回: (is_unified: bool, map_name: str or None)
+        1. 统一/通用模型:
+           - best.pt, best - Copy.pt, yolov8n.pt
+           - 以 best_ 开头 (如 best_20261018_134442.pt)
+           - 以 unified_ 或 common_ 开头
+        2. 地图专属模型:
+           - 格式: {map_name}_{timestamp}.pt (如 第三军营_20261019_180000.pt)
+           - 或者 {map_name}.pt
         """
-        model_paths = []
+        fname = os.path.basename(file_path)
+        stem, _ = os.path.splitext(fname)
+        lower_stem = stem.lower()
+
+        # 统一模型判定
+        if (lower_stem in ["best", "best - copy", "yolov8n"] or
+                lower_stem.startswith("best_") or
+                lower_stem.startswith("unified_") or
+                lower_stem.startswith("common_")):
+            return True, None
+
+        # 地图模型判定: 匹配 {map_name}_{YYYYMMDD_HHMMSS}
+        m = re.match(r"^(.+?)_\d{8}_\d{6}$", stem)
+        if m:
+            return False, m.group(1).strip()
+
+        # 兼顾下划线接数字版本号的命名格式
+        parts = stem.split("_")
+        if len(parts) > 1 and parts[-1].isdigit():
+            return False, "_".join(parts[:-1]).strip()
+
+        # 纯地图名模型 (如 第三军营.pt)
+        return False, stem.strip()
+
+    def get_available_models(self, map_name=None):
+        """
+        获取当前可用 YOLO 权重模型。
+        若指定了 map_name (例如 '第三军营'):
+          - 仅保留该地图专属模型 (第三军营_*.pt) 与 所有统一模型 (best_*.pt / best.pt)
+          - 自动剔除其他地图的专属模型！
+        若 map_name 为空:
+          - 保留全部统一模型
+        返回: (map_models, unified_models)
+        """
+        all_files = []
         seen = set()
 
         # 1. 扫描 models/ 目录
@@ -1357,7 +1396,7 @@ class DetectorApp(QMainWindow):
                     real = os.path.realpath(full)
                     if real not in seen and os.path.exists(full):
                         seen.add(real)
-                        model_paths.append(full)
+                        all_files.append(full)
 
         # 2. 扫描根目录
         for f in os.listdir(BASE_DIR):
@@ -1366,43 +1405,91 @@ class DetectorApp(QMainWindow):
                 real = os.path.realpath(full)
                 if real not in seen and os.path.exists(full):
                     seen.add(real)
-                    model_paths.append(full)
+                    all_files.append(full)
 
         # 3. 按文件修改时间倒序排序 (最新训练的模型置顶于首位)
-        model_paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        all_files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
 
         # 4. 兜底追加 yolov8n.pt
         if os.path.exists(FALLBACK_MODEL):
             real_fb = os.path.realpath(FALLBACK_MODEL)
             if real_fb not in seen:
-                model_paths.append(FALLBACK_MODEL)
+                all_files.append(FALLBACK_MODEL)
 
-        return model_paths
+        map_models = []
+        unified_models = []
+        normalized_map_name = map_name.strip().lower() if map_name else ""
+
+        for p in all_files:
+            is_unified, m_name = self.parse_model_identity(p)
+            if is_unified:
+                unified_models.append(p)
+            else:
+                if normalized_map_name and m_name and m_name.lower() == normalized_map_name:
+                    map_models.append(p)
+
+        return map_models, unified_models
 
     def refresh_model_list(self):
-        """刷新模型选择下拉列表，默认自动选中最新版本"""
-        models = self.get_available_models()
+        """
+        根据当前选中的地图 XML，刷新模型选择下拉列表。
+        过滤规则：下拉菜单中仅出现该地图专属模型与统一模型！
+        选择规则：有对应的专属模型就优先选用最新专属模型，没有则选用最新统一模型。
+        """
+        cur_map_name = ""
+        if hasattr(self, 'cb_map_xml') and self.cb_map_xml.count() > 0:
+            xml_path = self.cb_map_xml.currentData()
+            if xml_path and os.path.exists(xml_path):
+                cur_map_name = os.path.splitext(os.path.basename(xml_path))[0].strip()
+
+        map_models, unified_models = self.get_available_models(cur_map_name)
+
         self.cb_models.blockSignals(True)
         self.cb_models.clear()
 
-        if not models:
+        # 1. 填充当前地图专属模型
+        for p in map_models:
+            fname = os.path.basename(p)
+            mtime = datetime.datetime.fromtimestamp(os.path.getmtime(p)).strftime("%Y-%m-%d %H:%M:%S")
+            display_text = f"🎯 [地图专属] {fname}  ({mtime})"
+            self.cb_models.addItem(display_text, p)
+
+        # 2. 填充统一/通用模型
+        for p in unified_models:
+            fname = os.path.basename(p)
+            mtime = datetime.datetime.fromtimestamp(os.path.getmtime(p)).strftime("%Y-%m-%d %H:%M:%S")
+            display_text = f"🌐 [统一模型] {fname}  ({mtime})"
+            self.cb_models.addItem(display_text, p)
+
+        if self.cb_models.count() == 0:
             self.cb_models.addItem("未发现模型 (需先训练)", None)
             self.cb_models.blockSignals(False)
             return
 
-        for p in models:
-            fname = os.path.basename(p)
-            mtime = datetime.datetime.fromtimestamp(os.path.getmtime(p)).strftime("%Y-%m-%d %H:%M:%S")
-            display_text = f"{fname}  ({mtime})"
-            self.cb_models.addItem(display_text, p)
+        # 3. 决定默认选中模型 (有专属模型优先选最新专属模型，没有则选用最新统一模型)
+        if len(map_models) > 0:
+            target_idx = 0
+            default_path = map_models[0]
+            is_dedicated = True
+        elif len(unified_models) > 0:
+            target_idx = len(map_models)
+            default_path = unified_models[0]
+            is_dedicated = False
+        else:
+            target_idx = 0
+            default_path = self.cb_models.itemData(0)
+            is_dedicated = False
 
-        # 默认选中第一项 (最新模型)
-        self.cb_models.setCurrentIndex(0)
+        self.cb_models.setCurrentIndex(target_idx)
         self.cb_models.blockSignals(False)
 
-        selected_path = self.cb_models.currentData()
-        if selected_path:
-            self.load_selected_model(selected_path)
+        if default_path:
+            self.load_selected_model(default_path)
+            sel_fname = os.path.basename(default_path)
+            if is_dedicated:
+                self.log(f"🎯 【模型自动匹配】检测到地图 [{cur_map_name}] 专属模型，已自动锁定: {sel_fname}")
+            elif cur_map_name:
+                self.log(f"🌐 【模型自动匹配】地图 [{cur_map_name}] 暂无专属模型，自动选用最新统一模型: {sel_fname}")
 
     def on_model_selected(self, index):
         """用户在下拉列表中手动切换模型"""
@@ -1414,6 +1501,8 @@ class DetectorApp(QMainWindow):
         """加载指定的 YOLO 权重模型"""
         if not model_path or not os.path.exists(model_path):
             return
+        if self.model is not None and self.weights == model_path:
+            return # 已经加载当前模型，避免重复耗时加载
         try:
             prev_weights = self.weights
             self.weights = model_path
@@ -1806,6 +1895,8 @@ class DetectorApp(QMainWindow):
                 self._apply_map_canvas_size()
                 self.update_marked_layers_ui()
                 self.log(f"【地图更新】已载入地图: {os.path.basename(xml_path)}，小地图平台已就绪")
+                # 自动联动刷新模型列表并智能匹配地图专属模型
+                self.refresh_model_list()
 
     def on_minimap_scale_changed(self, value):
         """当用户微调小地图分辨率缩放比例时实时更新并保存"""

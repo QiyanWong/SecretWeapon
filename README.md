@@ -41,14 +41,21 @@ SecretWeapon/
 ├── minimap_tracker.py            # [Minimap Tracking] God-View panoramic mapping & route manager
 ├── yolo_detector.py              # [Main Application] PyQt5 control console & live inference GUI
 ├── gui_collector.py              # [Data Collection] Multi-mode game screen capture tool
-├── train_yolo.py                 # [Training Pipeline] Automated dataset split & YOLOv8 training
-├── generate_synthetic_dataset.py # [Data Synthesis] Synthetic image generation & augmentation
+├── generate_map_synthetic.py     # [Map Synthesis] Synthesize training data for specific map XML monsters
+├── train_map_models.py           # [Map Model Training] Continuously train dedicated models (MapName_Timestamp.pt)
+├── train_yolo.py                 # [Unified Training] Automated dataset split & unified YOLOv8 training
+├── generate_synthetic_dataset.py # [Data Synthesis] Unified synthetic image generation & augmentation
 ├── requirements.txt              # Python dependency manifest
 ├── dataset/                      # Configuration files & templates
 │   ├── combat_config.json        # Persistent combat & skill configurations
+│   ├── map_raw_images/           # Map-specific training image directories (<MapName>/)
+│   ├── raw_images/               # Unified training images
 │   └── player_template.png       # Minimap character tracking template
+├── models/                       # Trained YOLO models (MapName_Timestamp.pt & best_Timestamp.pt)
 ├── map/                          # Map topology XML files
-└── run_detector.bat              # One-click launch script
+├── run_detector.bat              # One-click launch script
+├── run_generate_map_synth.bat    # Interactive map synthetic dataset generator
+└── run_train_maps.bat            # One-click continuous map model trainer
 ```
 
 ---
