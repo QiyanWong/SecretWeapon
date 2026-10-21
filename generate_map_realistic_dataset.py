@@ -416,13 +416,13 @@ def download_map_assets(map_name, xml_path):
     return full_map, sorted(list(mobs)), platforms
 
 
-def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negative_ratio=0.10, player_scale=1.0,
+def build_realistic_dataset(map_name, count=100, min_mobs=8, max_mobs=14, negative_ratio=0.10, player_scale=1.0,
                             extra_mobs=None, mobs_override=None):
     """
     高密度真实地图合成生成器
-    - count: 生成图片组数 (默认 60)
-    - min_mobs: 视口内最少怪物数 (默认 6 只)
-    - max_mobs: 视口内最多怪物数 (默认 12 只)
+    - count: 生成图片组数 (默认 100 组，提供更充分的动作与受击硬直学习样本)
+    - min_mobs: 视口内最少怪物数 (默认 8 只)
+    - max_mobs: 视口内最多怪物数 (默认 14 只)
     - negative_ratio: 纯雪景地貌抗干扰负样本比例 (默认 10%)
     - player_scale: 玩家角色缩放比例 (默认 1.0 即 100% 原始像素)
     - extra_mobs: 手动额外补充的怪物 key 列表
@@ -477,10 +477,10 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
         for c in class_list:
             f.write(f"{c}\n")
 
-    # 载入怪物动作序列
+    # 载入怪物动作序列 (分别整理 normal 站立/行走 与 hit 受击硬直帧)
     mobs_sprites = {}
     for m in valid_mobs:
-        mobs_sprites[m] = []
+        mobs_sprites[m] = {'normal': [], 'hit': []}
         mdir = os.path.join(MONSTERS_DIR, m)
         for f in os.listdir(mdir):
             if f.endswith('.png'):
@@ -488,7 +488,14 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
                 bx1, by1, bx2, by2 = get_tight_bbox(im)
                 if bx2 > bx1 and by2 > by1:
                     im = im.crop((bx1, by1, bx2 + 1, by2 + 1))
-                mobs_sprites[m].append(im)
+                if 'hit' in f.lower():
+                    mobs_sprites[m]['hit'].append(im)
+                else:
+                    mobs_sprites[m]['normal'].append(im)
+        if not mobs_sprites[m]['hit']:
+            mobs_sprites[m]['hit'] = list(mobs_sprites[m]['normal'])
+        if not mobs_sprites[m]['normal']:
+            mobs_sprites[m]['normal'] = list(mobs_sprites[m]['hit'])
 
     # 载入各玩家角色独立素材池 (player1, player2, player3 等等，权重完全一致)
     players_data = {}  # { 'player1': {'player_left': [...], 'player_right': [...]}, ... }
@@ -648,9 +655,11 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
                     })
 
         if not is_neg and visible_plats:
-            # 1. 优先放置全部 3 个玩家角色 (player1, player2, player3 各一帧，每个玩家身旁必带一只金蘑菇宠物，且不打标签)
+            # 1. 优先放置多个玩家角色动作帧 (单图 4~6 个实例，保证各角色均出场并覆盖攻击/跳跃/跑动动作，每角色身旁带未标注金蘑菇跟宠)
             if players_data:
-                target_pids = list(players_data.keys())
+                p_keys = list(players_data.keys())
+                extra_cnt = min(len(visible_plats), random.randint(1, 3))
+                target_pids = list(p_keys) + random.choices(p_keys, k=extra_cnt)
                 random.shuffle(target_pids)
 
                 for pid in target_pids:
@@ -740,11 +749,15 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
                 attempts += 1
                 tplat = random.choices(visible_plats, weights=plat_weights, k=1)[0]
                 m_cls = random.choice(valid_mobs)
-                s_list = mobs_sprites.get(m_cls, [])
-                if not s_list:
+                s_dict = mobs_sprites.get(m_cls, {'normal': [], 'hit': []})
+                # 强化怪物被攻击后硬直 (hit) 动作帧：设定 35% 几率抽取受击硬直动作帧！
+                if s_dict['hit'] and random.random() < 0.35:
+                    m_im = random.choice(s_dict['hit']).copy()
+                elif s_dict['normal']:
+                    m_im = random.choice(s_dict['normal']).copy()
+                else:
                     continue
 
-                m_im = random.choice(s_list).copy()
                 if random.random() < 0.5:
                     m_im = m_im.transpose(Image.FLIP_LEFT_RIGHT)
 
@@ -838,9 +851,9 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="MapleStory 真实地图吸附式高密度合成生成器")
     parser.add_argument('--map', type=str, default='结冰平原1', help='地图名称 (对应 map/*.xml)')
-    parser.add_argument('--count', type=int, default=60, help='合成样本组数 (默认 60)')
-    parser.add_argument('--min-mobs', type=int, default=6, help='视口内最少怪物数 (默认 6)')
-    parser.add_argument('--max-mobs', type=int, default=12, help='视口内最多怪物数 (默认 12)')
+    parser.add_argument('--count', type=int, default=100, help='合成样本组数 (默认 100)')
+    parser.add_argument('--min-mobs', type=int, default=8, help='视口内最少怪物数 (默认 8)')
+    parser.add_argument('--max-mobs', type=int, default=14, help='视口内最多怪物数 (默认 14)')
     parser.add_argument('--negative-ratio', type=float, default=0.10, help='纯地貌抗干扰负样本比例 (默认 0.10)')
     parser.add_argument('--player-scale', type=float, default=1.0, help='玩家角色缩放比例 (默认 1.0 即 100% 原生像素)')
     parser.add_argument('--extra-mobs', type=str, default='', help='额外追加的怪物 key (逗号分隔，如: dark_axe_stump)')

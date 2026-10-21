@@ -177,7 +177,7 @@ def show_dashboard():
         print("   -> 运行选项 1 或命令: python map_pipeline_manager.py --auto-synth")
 
 
-def auto_synth_missing_materials(count=60):
+def auto_synth_missing_materials(count=100):
     """自动扫描并只为【没有对应素材文件夹或里面没东西】的地图合成图片"""
     statuses = get_pipeline_status()
     missing_maps = [s['map_name'] for s in statuses if s['stage'] == "NEED_SYNTH"]
@@ -270,7 +270,7 @@ def interactive_menu():
             try: input("\n按回车键返回主菜单...")
             except Exception: pass
         elif opt == '2':
-            auto_synth_missing_materials(count=60)
+            auto_synth_missing_materials(count=100)
             try: input("\n按回车键返回主菜单...")
             except Exception: pass
         elif opt == '3':
@@ -283,9 +283,9 @@ def interactive_menu():
                 xml_f = os.path.join(MAP_DIR, f"{mname}.xml")
                 if build_realistic_dataset is not None and os.path.exists(xml_f):
                     print(f"🏰 正在启用 100% 物理真实地貌还原合成: 【{mname}】...")
-                    build_realistic_dataset(mname, count=60)
+                    build_realistic_dataset(mname, count=100)
                 else:
-                    generate_map_dataset(mname, count=60)
+                    generate_map_dataset(mname, count=100)
             try: input("\n按回车键返回主菜单...")
             except Exception: pass
         elif opt == '5':
@@ -304,7 +304,7 @@ if __name__ == "__main__":
     parser.add_argument("--status", action="store_true", help="显示全景生命周期状态仪表盘")
     parser.add_argument("--auto-synth", action="store_true", help="增量合成：仅为缺少素材文件夹或内容为空的地图合成素材")
     parser.add_argument("--auto-train", action="store_true", help="增量训练：仅为有素材但没有对应模型的地图连续训练模型")
-    parser.add_argument("--count", type=int, default=60, help="增量合成张数 (默认 60)")
+    parser.add_argument("--count", type=int, default=100, help="增量合成张数 (默认 100)")
     parser.add_argument("--epochs", type=int, default=50, help="增量训练轮数 (默认 50)")
     parser.add_argument("--batch", type=int, default=8, help="Batch 大小 (默认 8)")
     args = parser.parse_args()

@@ -330,22 +330,30 @@ def load_player_sprites():
 
 
 def load_monster_sprites(monster_classes):
-    """加载指定地图涉及怪物的全动作帧素材"""
+    """加载指定地图涉及怪物的全动作帧素材 (分别整理 normal 与 hit 受击硬直帧)"""
     mobs_dict = {}
     for cls in monster_classes:
         folder = os.path.join(MONSTERS_DIR, cls)
         if not os.path.exists(folder):
             continue
-        mobs_dict[cls] = []
+        mobs_dict[cls] = {'normal': [], 'hit': []}
         for p in glob.glob(os.path.join(folder, "*.png")):
             try:
                 img = Image.open(p).convert("RGBA")
                 bx1, by1, bx2, by2 = get_tight_bbox(img)
                 if bx2 > bx1 and by2 > by1:
                     img = img.crop((bx1, by1, bx2 + 1, by2 + 1))
-                mobs_dict[cls].append({"class_name": cls, "image": img, "name": os.path.basename(p)})
+                item = {"class_name": cls, "image": img, "name": os.path.basename(p)}
+                if 'hit' in os.path.basename(p).lower():
+                    mobs_dict[cls]['hit'].append(item)
+                else:
+                    mobs_dict[cls]['normal'].append(item)
             except Exception:
                 pass
+        if not mobs_dict[cls]['hit']:
+            mobs_dict[cls]['hit'] = list(mobs_dict[cls]['normal'])
+        if not mobs_dict[cls]['normal']:
+            mobs_dict[cls]['normal'] = list(mobs_dict[cls]['hit'])
     return mobs_dict
 
 
@@ -478,15 +486,19 @@ def generate_map_dataset(map_name, count=60, canvas_size=(1280, 720), min_mobs=6
         labels = []       # (cls_id, norm_cx, norm_cy, norm_w, norm_h)
         json_shapes = []
 
-        # 放置本图怪物 (2 ~ 6 只)
-        num_mobs = random.randint(2, 6)
+        # 放置本图怪物 (6 ~ 12 只)
+        num_mobs = random.randint(min_mobs, max_mobs)
         for _ in range(num_mobs):
             m_cls = random.choice(valid_mobs)
-            sprite_list = mobs_sprites.get(m_cls, [])
-            if not sprite_list:
+            s_dict = mobs_sprites.get(m_cls, {'normal': [], 'hit': []})
+            # 强化怪物被攻击后硬直 (hit) 动作帧：设定 35% 几率抽取受击硬直动作帧
+            if s_dict['hit'] and random.random() < 0.35:
+                item = random.choice(s_dict['hit'])
+            elif s_dict['normal']:
+                item = random.choice(s_dict['normal'])
+            else:
                 continue
 
-            item = random.choice(sprite_list)
             m_img = item["image"].copy()
             if random.random() < 0.5:
                 m_img = m_img.transpose(Image.FLIP_LEFT_RIGHT)
@@ -523,9 +535,11 @@ def generate_map_dataset(map_name, count=60, canvas_size=(1280, 720), min_mobs=6
                             canvas.paste(d_img, (pos_x + random.randint(-5, mw), pos_y + mh - 10), d_img)
                     break
 
-        # 放置玩家角色：每张图中同时放入现有的全部 3 个玩家各一帧，且每个玩家身旁必带一个金蘑菇宠物 (不打标签)
+        # 放置玩家角色：多帧出场 (4~6 个实例)，每个玩家身旁必带一个金蘑菇宠物 (不打标签)
         if player_sprites:
-            target_pids = list(player_sprites.keys())
+            p_keys = list(player_sprites.keys())
+            extra_cnt = random.randint(1, 3)
+            target_pids = list(p_keys) + random.choices(p_keys, k=extra_cnt)
             random.shuffle(target_pids)
 
             for pid in target_pids:
@@ -639,9 +653,9 @@ def list_available_maps():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MapleStory 地图专属训练素材生成器")
     parser.add_argument("--map", type=str, default="", help="指定目标地图名称 (例如: 第三军营)")
-    parser.add_argument("--count", type=int, default=60, help="每张地图生成的合成样本数 (默认 60)")
-    parser.add_argument("--min-mobs", type=int, default=6, help="每张图最少怪物数 (默认 6)")
-    parser.add_argument("--max-mobs", type=int, default=12, help="每张图最多怪物数 (默认 12)")
+    parser.add_argument("--count", type=int, default=100, help="每张地图生成的合成样本数 (默认 100)")
+    parser.add_argument("--min-mobs", type=int, default=8, help="每张图最少怪物数 (默认 8)")
+    parser.add_argument("--max-mobs", type=int, default=14, help="每张图最多怪物数 (默认 14)")
     parser.add_argument("--all-available", action="store_true", help="自动为所有素材就绪的地图连续批量合成素材")
     parser.add_argument("--list", action="store_true", help="列出当前所有地图及素材就绪状态")
     args = parser.parse_args()
