@@ -1,0 +1,47 @@
+{
+  "comment": "本文件用于手动配置、补充或覆盖地图怪物映射。在此添加后，所有合成与训练脚本均会自动生效！",
+  "mob_id_mapping": {
+    "2130100": {
+      "key": "dark_axe_stump",
+      "cn": "黑斧木妖",
+      "drop": "firewood"
+    },
+    "3230301": {
+      "key": "jr_boogie",
+      "cn": "幼魔精灵(变体)",
+      "drop": null
+    },
+    "2230131": {
+      "key": "zombie_mushroom",
+      "cn": "烦躁的僵尸蘑菇",
+      "drop": "charm_of_the_undead"
+    },
+    "4090000": {
+      "key": "iron_hog",
+      "cn": "钢铁猪",
+      "drop": null
+    },
+    "5090000": {
+      "key": "shade",
+      "cn": "变种幽灵",
+      "drop": null
+    },
+    "6090001": {
+      "key": "snow_witch",
+      "cn": "雪女",
+      "drop": null
+    },
+    "6230100": {
+      "key": "wild_kargo",
+      "cn": "狂暴火龙",
+      "drop": null
+    }
+  },
+  "map_monster_overrides": {
+    "野猪的领土": [
+      "wild_boar",
+      "dark_axe_stump",
+      "jr_boogie"
+    ]
+  }
+}

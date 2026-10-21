@@ -34,6 +34,7 @@ names:
   32: jr_yeti
   33: hector
   34: white_fang
+  35: dark_axe_stump
 path: ./dataset
 train: images/train
 val: images/val

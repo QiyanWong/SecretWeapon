@@ -16,6 +16,10 @@ MODELS_DIR = os.path.join(BASE_DIR, "models")
 
 from generate_map_synthetic import generate_map_dataset, parse_map_mobs, find_map_background, MONSTERS_DIR
 from train_map_models import train_single_map
+try:
+    from generate_map_realistic_dataset import build_realistic_dataset
+except ImportError:
+    build_realistic_dataset = None
 
 
 def get_all_xml_maps():
@@ -190,12 +194,23 @@ def auto_synth_missing_materials(count=60):
     success_list = []
     for idx, m_name in enumerate(missing_maps, 1):
         print(f"\n[{idx}/{len(missing_maps)}] 正在为地图 【{m_name}】 合成素材...")
+        xml_file = os.path.join(MAP_DIR, f"{m_name}.xml")
         try:
-            ok = generate_map_dataset(m_name, count=count)
+            if build_realistic_dataset is not None and os.path.exists(xml_file):
+                print(f"   🏰 启用 100% 物理真实地貌还原合成...")
+                ok = build_realistic_dataset(m_name, count=count)
+            else:
+                ok = generate_map_dataset(m_name, count=count)
             if ok:
                 success_list.append(m_name)
         except Exception as e:
-            print(f"   ⚠️ 地图 【{m_name}】 合成失败: {e}")
+            print(f"   ⚠️ 地图 【{m_name}】 真实合成失败: {e}，尝试使用通用合成兜底...")
+            try:
+                ok = generate_map_dataset(m_name, count=count)
+                if ok:
+                    success_list.append(m_name)
+            except Exception as e2:
+                print(f"   ❌ 地图 【{m_name}】 彻底合成失败: {e2}")
 
     print("\n" + "=" * 80)
     print(f"🎉 增量合成完成！本次为 {len(success_list)} 张地图成功补充了训练素材: {success_list}")
@@ -265,8 +280,12 @@ def interactive_menu():
         elif opt == '4':
             mname = input("请输入地图名称 (例如 结冰平原1): ").strip()
             if mname:
-                from generate_map_synthetic import generate_map_dataset
-                generate_map_dataset(mname, count=60)
+                xml_f = os.path.join(MAP_DIR, f"{mname}.xml")
+                if build_realistic_dataset is not None and os.path.exists(xml_f):
+                    print(f"🏰 正在启用 100% 物理真实地貌还原合成: 【{mname}】...")
+                    build_realistic_dataset(mname, count=60)
+                else:
+                    generate_map_dataset(mname, count=60)
             try: input("\n按回车键返回主菜单...")
             except Exception: pass
         elif opt == '5':

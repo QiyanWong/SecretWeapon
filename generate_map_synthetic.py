@@ -73,8 +73,36 @@ MOB_ID_TO_KEY = {
     3230100: 'cold_eye',
     100101:  'red_snail',
     120100:  'orange_mushroom',
-    1140100: 'axe_stump'
+    1140100: 'axe_stump',
+    2130100: 'dark_axe_stump',
+    3230301: 'jr_boogie',
+    2230131: 'zombie_mushroom',
+    4090000: 'iron_hog',
+    5090000: 'shade',
+    6090001: 'snow_witch',
+    6230100: 'wild_kargo'
 }
+
+CUSTOM_MOBS_FILE = os.path.join(BASE_DIR, "custom_mobs.json")
+
+def load_custom_mobs_config():
+    if not os.path.exists(CUSTOM_MOBS_FILE):
+        return {}, {}
+    try:
+        with open(CUSTOM_MOBS_FILE, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+            return cfg.get("mob_id_mapping", {}), cfg.get("map_monster_overrides", {})
+    except Exception:
+        return {}, {}
+
+_custom_ids, CUSTOM_MAP_OVERRIDES = load_custom_mobs_config()
+for _sid, _info in _custom_ids.items():
+    try:
+        _mid = int(_sid)
+        _k = _info['key']
+        MOB_ID_TO_KEY[_mid] = _k
+    except ValueError:
+        pass
 
 # 怪物专属掉落物绑定
 MONSTER_TO_UNIQUE_DROP = {
@@ -85,6 +113,7 @@ MONSTER_TO_UNIQUE_DROP = {
     'horny_mushroom':  'horny_mushroom_cap',
     'zombie_mushroom': 'charm_of_the_undead',
     'axe_stump':       'firewood',
+    'dark_axe_stump':  'firewood',
     'wild_boar':       'wild_boar_tooth',
     'pig':             'pig_head',
     'ribbon_pig':      'pig_ribbon',

@@ -86,8 +86,37 @@ MOB_ID_TO_KEY = {
     3230100: 'cold_eye',
     100101:  'red_snail',
     120100:  'orange_mushroom',
-    1140100: 'axe_stump'
+    1140100: 'axe_stump',
+    2130100: 'dark_axe_stump',
+    3230301: 'jr_boogie',
+    2230131: 'zombie_mushroom',
+    4090000: 'iron_hog',
+    5090000: 'shade',
+    6090001: 'snow_witch',
+    6230100: 'wild_kargo'
 }
+
+CUSTOM_MOBS_FILE = os.path.join(BASE_DIR, "custom_mobs.json")
+
+def load_custom_mobs_config():
+    """读取 custom_mobs.json 中的手动自定义怪物映射与地图绑定"""
+    if not os.path.exists(CUSTOM_MOBS_FILE):
+        return {}, {}
+    try:
+        with open(CUSTOM_MOBS_FILE, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+            return cfg.get("mob_id_mapping", {}), cfg.get("map_monster_overrides", {})
+    except Exception:
+        return {}, {}
+
+_custom_ids, CUSTOM_MAP_OVERRIDES = load_custom_mobs_config()
+for _sid, _info in _custom_ids.items():
+    try:
+        _mid = int(_sid)
+        _k = _info['key']
+        MOB_ID_TO_KEY[_mid] = _k
+    except ValueError:
+        pass
 
 MOB_KEY_TO_ID = {v: k for k, v in MOB_ID_TO_KEY.items()}
 
@@ -99,6 +128,7 @@ MONSTER_TO_UNIQUE_DROP = {
     'horny_mushroom':  ('horny_mushroom_cap', 4000017),
     'zombie_mushroom': ('charm_of_the_undead', 4000018),
     'axe_stump':       ('firewood', 4000015),
+    'dark_axe_stump':  ('firewood', 4000018),
     'wild_boar':       ('wild_boar_tooth', 4000020),
     'pig':             ('pig_head', 4000021),
     'ribbon_pig':      ('pig_ribbon', 4000001),
@@ -386,7 +416,8 @@ def download_map_assets(map_name, xml_path):
     return full_map, sorted(list(mobs)), platforms
 
 
-def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negative_ratio=0.10, player_scale=1.0):
+def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negative_ratio=0.10, player_scale=1.0,
+                            extra_mobs=None, mobs_override=None):
     """
     高密度真实地图合成生成器
     - count: 生成图片组数 (默认 60)
@@ -394,19 +425,44 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
     - max_mobs: 视口内最多怪物数 (默认 12 只)
     - negative_ratio: 纯雪景地貌抗干扰负样本比例 (默认 10%)
     - player_scale: 玩家角色缩放比例 (默认 1.0 即 100% 原始像素)
+    - extra_mobs: 手动额外补充的怪物 key 列表
+    - mobs_override: 手动强制覆盖的怪物 key 列表
     """
     xml_path = os.path.join(MAP_DIR, f"{map_name}.xml")
     if not os.path.exists(xml_path):
         print(f"❌ 找不到地图 XML 文件: {xml_path}")
         return False
 
-    full_map, mobs, platforms = download_map_assets(map_name, xml_path)
+    full_map, xml_mobs, platforms = download_map_assets(map_name, xml_path)
     mw, mh = full_map.size
+
+    # 1. 确定本张地图生效的怪物清单 (优先级: CLI显式指定 > custom_mobs.json覆盖 > XML自动解析)
+    if mobs_override:
+        mobs = set(mobs_override)
+        print(f"   ⚡ 使用命令行显式覆盖怪物列表: {sorted(list(mobs))}")
+    elif map_name in CUSTOM_MAP_OVERRIDES:
+        mobs = set(CUSTOM_MAP_OVERRIDES[map_name])
+        print(f"   ⚡ 使用 custom_mobs.json 绑定的怪物列表: {sorted(list(mobs))}")
+    else:
+        mobs = set(xml_mobs)
+
+    if extra_mobs:
+        mobs.update(extra_mobs)
+        print(f"   ➕ 额外追加怪物: {extra_mobs}")
+
+    # 自动确保所有指定怪物的贴图均已就绪
+    for m in mobs:
+        if not os.path.exists(os.path.join(MONSTERS_DIR, m)):
+            mid = MOB_KEY_TO_ID.get(m)
+            if mid:
+                ensure_monster_sprites(m, mid)
 
     valid_mobs = [m for m in mobs if os.path.exists(os.path.join(MONSTERS_DIR, m))]
     if not valid_mobs:
         print(f"❌ 怪物素材缺失: {mobs}，请确认对应怪物贴图！")
         return False
+
+    print(f"   👾 本地图最终训练怪物目标: {sorted(valid_mobs)}")
 
     # 专属模型类别 (必须包含玩家左右朝向 + 该地图出现的怪物)
     class_list = ['player_left', 'player_right'] + sorted(valid_mobs)
@@ -631,9 +687,16 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
                             if not overlap:
                                 canvas.paste(p_im, (pos_x, pos_y), p_im)
                                 placed_boxes.append(cand_box)
-                                norm_cx = ((pos_x + pos_x + psp_w) / 2.0) / cw
-                                norm_cy = ((pos_y + pos_y + psp_h) / 2.0) / ch
-                                labels.append((class_to_id[p_cls], norm_cx, norm_cy, psp_w / cw, psp_h / ch))
+                                cbx1 = max(0, min(cw, pos_x))
+                                cby1 = max(0, min(ch, pos_y))
+                                cbx2 = max(0, min(cw, pos_x + psp_w))
+                                cby2 = max(0, min(ch, pos_y + psp_h))
+                                if cbx2 > cbx1 and cby2 > cby1:
+                                    norm_w = (cbx2 - cbx1) / cw
+                                    norm_h = (cby2 - cby1) / ch
+                                    norm_cx = (cbx1 + cbx2) / (2.0 * cw)
+                                    norm_cy = (cby1 + cby2) / (2.0 * ch)
+                                    labels.append((class_to_id[p_cls], norm_cx, norm_cy, norm_w, norm_h))
                                 shapes.append({
                                     "label": p_cls,
                                     "points": extract_polygon(p_im, pos_x, pos_y),
@@ -710,9 +773,16 @@ def build_realistic_dataset(map_name, count=60, min_mobs=6, max_mobs=12, negativ
                 if not overlap:
                     canvas.paste(m_im, (pos_x, pos_y), m_im)
                     placed_boxes.append(cand_box)
-                    norm_cx = ((pos_x + pos_x + msp_w) / 2.0) / cw
-                    norm_cy = ((pos_y + pos_y + msp_h) / 2.0) / ch
-                    labels.append((class_to_id[m_cls], norm_cx, norm_cy, msp_w / cw, msp_h / ch))
+                    cbx1 = max(0, min(cw, pos_x))
+                    cby1 = max(0, min(ch, pos_y))
+                    cbx2 = max(0, min(cw, pos_x + msp_w))
+                    cby2 = max(0, min(ch, pos_y + msp_h))
+                    if cbx2 > cbx1 and cby2 > cby1:
+                        norm_w = (cbx2 - cbx1) / cw
+                        norm_h = (cby2 - cby1) / ch
+                        norm_cx = (cbx1 + cbx2) / (2.0 * cw)
+                        norm_cy = (cby1 + cby2) / (2.0 * ch)
+                        labels.append((class_to_id[m_cls], norm_cx, norm_cy, norm_w, norm_h))
                     shapes.append({
                         "label": m_cls,
                         "points": extract_polygon(m_im, pos_x, pos_y),
@@ -773,8 +843,15 @@ if __name__ == '__main__':
     parser.add_argument('--max-mobs', type=int, default=12, help='视口内最多怪物数 (默认 12)')
     parser.add_argument('--negative-ratio', type=float, default=0.10, help='纯地貌抗干扰负样本比例 (默认 0.10)')
     parser.add_argument('--player-scale', type=float, default=1.0, help='玩家角色缩放比例 (默认 1.0 即 100% 原生像素)')
+    parser.add_argument('--extra-mobs', type=str, default='', help='额外追加的怪物 key (逗号分隔，如: dark_axe_stump)')
+    parser.add_argument('--mobs', type=str, default='', help='完全强制指定该地图的怪物 key 列表 (逗号分隔，如: wild_boar,dark_axe_stump,jr_boogie)')
     args = parser.parse_args()
+
+    extra_mobs_list = [m.strip() for m in args.extra_mobs.split(',') if m.strip()] if args.extra_mobs else None
+    mobs_override_list = [m.strip() for m in args.mobs.split(',') if m.strip()] if args.mobs else None
 
     build_realistic_dataset(args.map, count=args.count, min_mobs=args.min_mobs,
                            max_mobs=args.max_mobs, negative_ratio=args.negative_ratio,
-                           player_scale=args.player_scale)
+                           player_scale=args.player_scale,
+                           extra_mobs=extra_mobs_list,
+                           mobs_override=mobs_override_list)
