@@ -38,6 +38,7 @@ MONSTERS_DIR = os.path.join(ASSET_DIR, "monsters")
 DROPS_DIR = os.path.join(ASSET_DIR, "drops")
 PLAYER_DIR = os.path.join(ASSET_DIR, "player")
 DISTRACTORS_DIR = os.path.join(ASSET_DIR, "distractors")
+SKILL_EFFECTS_DIR = os.path.join(ASSET_DIR, "skill_effects")
 MAP_RAW_ROOT = os.path.join(BASE_DIR, "dataset", "map_raw_images")
 
 # 官方怪物 ID 映射
@@ -601,6 +602,29 @@ def build_realistic_dataset(map_name, count=100, min_mobs=8, max_mobs=14, negati
                     drops[d_name] = Image.open(os.path.join(ddir, f)).convert('RGBA')
                     break
 
+    # 载入强力攻击与魔法双击的打击/受击特效素材
+    skill_effects = {
+        'power_strike': {'effect': [], 'hit': []},
+        'magic_claw': {'effect': [], 'hit': []}
+    }
+    if os.path.exists(SKILL_EFFECTS_DIR):
+        for sk in ['power_strike', 'magic_claw']:
+            s_path = os.path.join(SKILL_EFFECTS_DIR, sk)
+            if os.path.exists(s_path):
+                for f in os.listdir(s_path):
+                    if f.lower().endswith('.png'):
+                        try:
+                            eff_im = Image.open(os.path.join(s_path, f)).convert('RGBA')
+                            bx1, by1, bx2, by2 = get_tight_bbox(eff_im)
+                            if bx2 > bx1 and by2 > by1:
+                                eff_im = eff_im.crop((bx1, by1, bx2 + 1, by2 + 1))
+                            if 'hit' in f.lower():
+                                skill_effects[sk]['hit'].append(eff_im)
+                            else:
+                                skill_effects[sk]['effect'].append(eff_im)
+                        except Exception:
+                            pass
+
     cw, ch = 1280, 720
     max_vx = max(0, mw - cw)
     max_vy = max(0, mh - ch)
@@ -751,8 +775,10 @@ def build_realistic_dataset(map_name, count=100, min_mobs=8, max_mobs=14, negati
                 m_cls = random.choice(valid_mobs)
                 s_dict = mobs_sprites.get(m_cls, {'normal': [], 'hit': []})
                 # 强化怪物被攻击后硬直 (hit) 动作帧：设定 35% 几率抽取受击硬直动作帧！
+                is_hit = False
                 if s_dict['hit'] and random.random() < 0.35:
                     m_im = random.choice(s_dict['hit']).copy()
+                    is_hit = True
                 elif s_dict['normal']:
                     m_im = random.choice(s_dict['normal']).copy()
                 else:
@@ -801,6 +827,38 @@ def build_realistic_dataset(map_name, count=100, min_mobs=8, max_mobs=14, negati
                         "points": extract_polygon(m_im, pos_x, pos_y),
                         "group_id": None, "shape_type": "polygon", "flags": {}
                     })
+
+                    # 核心技能打击与受击特效覆盖模拟 (强力攻击 Power Strike / 魔法双击 Magic Claw)
+                    # 当怪物处于受击硬直 (hit) 状态时，以 85% 高几率在怪物身上叠加技能刀光/抓痕与受击爆炸火花，遮挡怪物
+                    # 同时对正常行走怪物给予 10% 几率模拟起手首帧击中瞬间
+                    should_apply_skill = (is_hit and random.random() < 0.85) or (not is_hit and random.random() < 0.10)
+                    avail_skills = [sk for sk in ['power_strike', 'magic_claw'] if skill_effects[sk]['effect'] or skill_effects[sk]['hit']]
+                    if should_apply_skill and avail_skills:
+                        chosen_skill = random.choice(avail_skills)
+                        sk_pool = skill_effects[chosen_skill]
+                        eff_sprites_to_paste = []
+                        r_type = random.random()
+                        if r_type < 0.40 and sk_pool['effect']:
+                            eff_sprites_to_paste.append(random.choice(sk_pool['effect']))
+                        elif r_type < 0.70 and sk_pool['hit']:
+                            eff_sprites_to_paste.append(random.choice(sk_pool['hit']))
+                        else:
+                            if sk_pool['effect']:
+                                eff_sprites_to_paste.append(random.choice(sk_pool['effect']))
+                            if sk_pool['hit']:
+                                eff_sprites_to_paste.append(random.choice(sk_pool['hit']))
+
+                        m_cx = pos_x + msp_w // 2
+                        m_cy = pos_y + msp_h // 2
+                        flip_eff = random.random() < 0.5
+                        for eff_sp in eff_sprites_to_paste:
+                            eff_copy = eff_sp.copy()
+                            if flip_eff:
+                                eff_copy = eff_copy.transpose(Image.FLIP_LEFT_RIGHT)
+                            ew, eh = eff_copy.size
+                            eff_x = m_cx - ew // 2 + random.randint(-6, 6)
+                            eff_y = m_cy - eh // 2 + random.randint(-8, 6)
+                            canvas.paste(eff_copy, (eff_x, eff_y), eff_copy)
 
                     # 30% 几率在脚边伴随掉落物
                     if random.random() < 0.30:
