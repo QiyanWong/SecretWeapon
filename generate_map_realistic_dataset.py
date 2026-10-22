@@ -909,6 +909,8 @@ def build_realistic_dataset(map_name, count=100, min_mobs=8, max_mobs=14, negati
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="MapleStory 真实地图吸附式高密度合成生成器")
     parser.add_argument('--map', type=str, default='结冰平原1', help='地图名称 (对应 map/*.xml)')
+    parser.add_argument('--all', action='store_true', help='为 map/ 目录下的全部地图批量生成')
+    parser.add_argument('--clean', action='store_true', help='生成前清空旧合成数据')
     parser.add_argument('--count', type=int, default=100, help='合成样本组数 (默认 100)')
     parser.add_argument('--min-mobs', type=int, default=8, help='视口内最少怪物数 (默认 8)')
     parser.add_argument('--max-mobs', type=int, default=14, help='视口内最多怪物数 (默认 14)')
@@ -918,11 +920,55 @@ if __name__ == '__main__':
     parser.add_argument('--mobs', type=str, default='', help='完全强制指定该地图的怪物 key 列表 (逗号分隔，如: wild_boar,dark_axe_stump,jr_boogie)')
     args = parser.parse_args()
 
-    extra_mobs_list = [m.strip() for m in args.extra_mobs.split(',') if m.strip()] if args.extra_mobs else None
-    mobs_override_list = [m.strip() for m in args.mobs.split(',') if m.strip()] if args.mobs else None
+    import glob, shutil
 
-    build_realistic_dataset(args.map, count=args.count, min_mobs=args.min_mobs,
-                           max_mobs=args.max_mobs, negative_ratio=args.negative_ratio,
-                           player_scale=args.player_scale,
-                           extra_mobs=extra_mobs_list,
-                           mobs_override=mobs_override_list)
+    if args.clean:
+        if args.all:
+            print(f"🧹 正在清空全部地图的历史合成数据: {MAP_RAW_ROOT}...")
+            if os.path.exists(MAP_RAW_ROOT):
+                for item in os.listdir(MAP_RAW_ROOT):
+                    ipath = os.path.join(MAP_RAW_ROOT, item)
+                    if os.path.isdir(ipath):
+                        shutil.rmtree(ipath, ignore_errors=True)
+            print("✓ 已彻底清空历史合成素材！")
+        else:
+            target_clean = os.path.join(MAP_RAW_ROOT, args.map)
+            if os.path.exists(target_clean):
+                shutil.rmtree(target_clean, ignore_errors=True)
+                print(f"✓ 已清空【{args.map}】历史合成素材！")
+
+    if args.all:
+        xml_files = sorted(glob.glob(os.path.join(MAP_DIR, "*.xml")))
+        all_maps = [os.path.splitext(os.path.basename(f))[0] for f in xml_files]
+        print(f"🚀 开始为全部 {len(all_maps)} 张地图批量合成真实训练数据...")
+        success = []
+        failed = []
+        for i, m_name in enumerate(all_maps, 1):
+            print(f"\n========================================================")
+            print(f"[{i}/{len(all_maps)}] 正在合成地图: 【{m_name}】")
+            print(f"========================================================")
+            try:
+                ok = build_realistic_dataset(m_name, count=args.count, min_mobs=args.min_mobs,
+                                            max_mobs=args.max_mobs, negative_ratio=args.negative_ratio,
+                                            player_scale=args.player_scale)
+                if ok:
+                    success.append(m_name)
+                else:
+                    failed.append((m_name, "build_realistic_dataset returned False"))
+            except Exception as e:
+                print(f"❌ 地图 【{m_name}】 合成失败: {e}")
+                failed.append((m_name, str(e)))
+        print(f"\n========================================================")
+        print(f"🎉 全部地图批量合成完成！成功: {len(success)}/{len(all_maps)}")
+        if failed:
+            print(f"⚠️ 失败列表: {failed}")
+        print(f"========================================================")
+    else:
+        extra_mobs_list = [m.strip() for m in args.extra_mobs.split(',') if m.strip()] if args.extra_mobs else None
+        mobs_override_list = [m.strip() for m in args.mobs.split(',') if m.strip()] if args.mobs else None
+
+        build_realistic_dataset(args.map, count=args.count, min_mobs=args.min_mobs,
+                               max_mobs=args.max_mobs, negative_ratio=args.negative_ratio,
+                               player_scale=args.player_scale,
+                               extra_mobs=extra_mobs_list,
+                               mobs_override=mobs_override_list)
