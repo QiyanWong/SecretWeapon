@@ -247,6 +247,40 @@ def auto_train_missing_models(epochs=50, batch=8, imgsz=800):
     return trained_list
 
 
+def force_train_all_models(epochs=50, batch=8, imgsz=800):
+    """强制为所有拥有素材的地图连续训练专属模型（无论是否已有旧模型）"""
+    statuses = get_pipeline_status()
+    # 只要素材就绪，无论已有模型状态如何，全部列入训练清单
+    trainable_maps = [s['map_name'] for s in statuses if s['has_materials'] and s['valid_pairs'] > 0]
+
+    if not trainable_maps:
+        print("❌ 当前没有任何地图具备有效训练素材，请先合成素材！")
+        return []
+
+    print("=" * 80)
+    print(f"🔥 【强制全量训练模式启动】")
+    print(f"📋 共扫描到 {len(trainable_maps)} 张具备素材的地图: {trainable_maps}")
+    print(f"⚙️ 训练配置: Epochs={epochs}, Batch={batch}, ImgSz={imgsz}")
+    print("=" * 80)
+
+    trained_list = []
+    for idx, m_name in enumerate(trainable_maps, 1):
+        print(f"\n[{idx}/{len(trainable_maps)}] 正在强制重新训练地图 【{m_name}】 专属模型...")
+        try:
+            model_path = train_single_map(m_name, epochs=epochs, batch=batch, imgsz=imgsz)
+            if model_path:
+                trained_list.append((m_name, model_path))
+        except Exception as e:
+            print(f"❌ 地图 【{m_name}】 训练过程出错: {e}")
+
+    print("\n" + "=" * 80)
+    print(f"🎉 强制全量训练全部完成！成功生成 {len(trained_list)}/{len(trainable_maps)} 个最新专属模型:")
+    for m_name, p in trained_list:
+        print(f"   ✓ 地图 [{m_name}]: {os.path.basename(p)}")
+    print("=" * 80)
+    return trained_list
+
+
 def interactive_menu():
     """交互式主菜单循环"""
     while True:
@@ -256,12 +290,13 @@ def interactive_menu():
         print(" [1] 查看全景生命周期看板 (XML -> 训练素材 -> YOLO模型 状态)")
         print(" [2] 增量合成素材 (自动检测缺少素材的地图，一键批量合成)")
         print(" [3] 增量训练模型 (自动检测有素材缺模型的地图，一键批量训练)")
-        print(" [4] 单独为指定地图合成素材 (如 结冰平原1 / 第二军营)")
-        print(" [5] 单独为指定地图训练模型 (如 结冰平原1 / 第二军营)")
-        print(" [6] 退出")
+        print(" [4] 强制为所有地图全量训练专属模型 (忽略已有模型，重新全量训练)")
+        print(" [5] 单独为指定地图合成素材 (如 结冰平原1 / 第二军营)")
+        print(" [6] 单独为指定地图训练模型 (如 结冰平原1 / 第二军营)")
+        print(" [7] 退出")
         print("=" * 80)
         try:
-            opt = input("请选择操作 [1-6] (默认1): ").strip()
+            opt = input("请选择操作 [1-7] (默认1): ").strip()
         except (KeyboardInterrupt, EOFError):
             break
 
@@ -278,6 +313,15 @@ def interactive_menu():
             try: input("\n按回车键返回主菜单...")
             except Exception: pass
         elif opt == '4':
+            try:
+                confirm = input("⚠️ 该操作将强制为全部地图重新训练专属模型，确定开始？(y/n, 默认y): ").strip().lower()
+            except Exception:
+                confirm = 'y'
+            if confirm in ('', 'y', 'yes'):
+                force_train_all_models(epochs=50, batch=8)
+            try: input("\n按回车键返回主菜单...")
+            except Exception: pass
+        elif opt == '5':
             mname = input("请输入地图名称 (例如 结冰平原1): ").strip()
             if mname:
                 xml_f = os.path.join(MAP_DIR, f"{mname}.xml")
@@ -288,13 +332,13 @@ def interactive_menu():
                     generate_map_dataset(mname, count=100)
             try: input("\n按回车键返回主菜单...")
             except Exception: pass
-        elif opt == '5':
+        elif opt == '6':
             mname = input("请输入地图名称 (例如 结冰平原1): ").strip()
             if mname:
                 train_single_map(mname, epochs=50, batch=8)
             try: input("\n按回车键返回主菜单...")
             except Exception: pass
-        elif opt == '6':
+        elif opt == '7':
             print("再见！")
             break
 
@@ -304,6 +348,7 @@ if __name__ == "__main__":
     parser.add_argument("--status", action="store_true", help="显示全景生命周期状态仪表盘")
     parser.add_argument("--auto-synth", action="store_true", help="增量合成：仅为缺少素材文件夹或内容为空的地图合成素材")
     parser.add_argument("--auto-train", action="store_true", help="增量训练：仅为有素材但没有对应模型的地图连续训练模型")
+    parser.add_argument("--force-train-all", action="store_true", help="强制全量训练：不论是否已有模型，为全部拥有素材的地图重新训练专属模型")
     parser.add_argument("--count", type=int, default=100, help="增量合成张数 (默认 100)")
     parser.add_argument("--epochs", type=int, default=50, help="增量训练轮数 (默认 50)")
     parser.add_argument("--batch", type=int, default=8, help="Batch 大小 (默认 8)")
@@ -313,7 +358,10 @@ if __name__ == "__main__":
         auto_synth_missing_materials(count=args.count)
     elif args.auto_train:
         auto_train_missing_models(epochs=args.epochs, batch=args.batch)
+    elif args.force_train_all:
+        force_train_all_models(epochs=args.epochs, batch=args.batch)
     elif args.status:
         show_dashboard()
     else:
         interactive_menu()
+
