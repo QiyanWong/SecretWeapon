@@ -55,7 +55,7 @@ MOB_CATALOG = {
     5140000: {'key': 'white_fang',      'cn': '白狼'},
     5130101: {'key': 'dark_stone_golem','cn': '黑石头人'},
     5130102: {'key': 'dark_stone_golem','cn': '黑石头人(变体)'},
-    5130103: {'key': 'croco',          'cn': '沼泽青鳄(变体)'},
+    5130103: {'key': 'dark_croco',     'cn': '黑鳄鱼'},
     2230131: {'key': 'zombie_mushroom','cn': '烦躁的僵尸蘑菇'},
     2300100: {'key': 'stirge',         'cn': '蝙蝠魔/小蝙蝠'},
     4090000: {'key': 'iron_hog',        'cn': '钢铁猪'},

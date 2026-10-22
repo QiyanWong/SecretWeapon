@@ -78,7 +78,7 @@ MOB_ID_TO_KEY = {
     5140000: 'white_fang',
     5130101: 'dark_stone_golem',
     5130102: 'dark_stone_golem',
-    5130103: 'croco',
+    5130103: 'dark_croco',
     130101:  'red_snail',
     1210100: 'pig',
     7130100: 'tauromacis',
@@ -136,6 +136,7 @@ MONSTER_TO_UNIQUE_DROP = {
     'fire_boar':       ('fire_boar_tooth', 4000024),
     'jr_necki':        ('jr_necki_skin', 4000025),
     'croco':           ('ligator_skin', 4000027),
+    'dark_croco':      ('croco_skin', 4000033),
     'drake':           ('drake_skull', 4000028),
     'evil_eye':        ('evil_eye_tail', 4000022),
     'cold_eye':        ('cold_eye_tail', 4000023),
@@ -635,7 +636,9 @@ def build_realistic_dataset(map_name, count=100, min_mobs=8, max_mobs=14, negati
         'player_left': (255, 120, 0),
         'player_right': (255, 180, 0),
         'hector': (0, 165, 255),
-        'white_fang': (0, 255, 255)
+        'white_fang': (0, 255, 255),
+        'croco': (0, 180, 100),
+        'dark_croco': (40, 90, 40)
     }
 
     neg_step = int(1.0 / negative_ratio) if negative_ratio > 0 else 999999

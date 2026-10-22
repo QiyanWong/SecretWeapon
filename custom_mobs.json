@@ -35,6 +35,11 @@
       "key": "wild_kargo",
       "cn": "狂暴火龙",
       "drop": null
+    },
+    "5130103": {
+      "key": "dark_croco",
+      "cn": "黑鳄鱼",
+      "drop": "croco_skin"
     }
   },
   "map_monster_overrides": {
@@ -42,6 +47,15 @@
       "wild_boar",
       "dark_axe_stump",
       "jr_boogie"
+    ],
+    "鳄鱼潭1": [
+      "croco",
+      "dark_croco",
+      "jr_necki"
+    ],
+    "鳄鱼潭2": [
+      "dark_croco",
+      "jr_necki"
     ]
   }
 }
