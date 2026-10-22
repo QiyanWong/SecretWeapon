@@ -251,7 +251,7 @@ def force_train_all_models(epochs=50, batch=8, imgsz=800):
     """强制为所有拥有素材的地图连续训练专属模型（无论是否已有旧模型）"""
     statuses = get_pipeline_status()
     # 只要素材就绪，无论已有模型状态如何，全部列入训练清单
-    trainable_maps = [s['map_name'] for s in statuses if s['has_materials'] and s['valid_pairs'] > 0]
+    trainable_maps = [s['map_name'] for s in statuses if s.get('has_folder') and s.get('pairs_count', 0) > 0]
 
     if not trainable_maps:
         print("❌ 当前没有任何地图具备有效训练素材，请先合成素材！")
